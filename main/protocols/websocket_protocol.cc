@@ -11,7 +11,7 @@
 
 #define TAG "WS"
 
-// ����֤������
+// 添加证书配置
 extern const uint8_t server_cert_pem_start[] asm("_binary_server_crt_start");
 extern const uint8_t server_cert_pem_end[] asm("_binary_server_crt_end");
 
@@ -62,16 +62,37 @@ void WebsocketProtocol::CloseAudioChannel() {
 bool WebsocketProtocol::OpenAudioChannel() {
     if (websocket_ != nullptr) {
         delete websocket_;
+        websocket_ = nullptr;
     }
 
     error_occurred_ = false;
     std::string url = CONFIG_WEBSOCKET_URL;
     std::string token = "Bearer " + std::string(CONFIG_WEBSOCKET_ACCESS_TOKEN);
-    websocket_ = Board::GetInstance().CreateWebSocket();
     
-    // ����SSL֤��
-    // websocket_->SetCertificate((const char*)server_cert_pem_start);
+    // 创建WebSocket对象
+    try {
+        websocket_ = Board::GetInstance().CreateWebSocket();
+        if (websocket_ == nullptr) {
+            ESP_LOGE(TAG, "Failed to create WebSocket object");
+            SetError(Lang::Strings::SERVER_ERROR);
+            return false;
+        }
+    } catch (const std::exception& e) {
+        ESP_LOGE(TAG, "Exception when creating WebSocket: %s", e.what());
+        SetError(Lang::Strings::SERVER_ERROR);
+        return false;
+    } catch (...) {
+        ESP_LOGE(TAG, "Unknown exception when creating WebSocket");
+        SetError(Lang::Strings::SERVER_ERROR);
+        return false;
+    }
     
+    // 设置SSL证书 - 证书验证由TlsTransport在创建时处理
+    if (url.find("wss://") == 0) {
+        ESP_LOGI(TAG, "Using WSS protocol with TLS transport");
+    }
+    
+    // 设置HTTP头
     websocket_->SetHeader("Authorization", token.c_str());
     websocket_->SetHeader("Protocol-Version", "1");
     websocket_->SetHeader("Device-Id", SystemInfo::GetMacAddress().c_str());
@@ -79,6 +100,7 @@ bool WebsocketProtocol::OpenAudioChannel() {
     websocket_->SetHeader("Protocol", "websocket");
     websocket_->SetHeader("Upgrade", "websocket");
 
+    // 设置数据回调
     websocket_->OnData([this](const char* data, size_t len, bool binary) {
         if (binary) {
             if (on_incoming_audio_ != nullptr) {
@@ -87,6 +109,11 @@ bool WebsocketProtocol::OpenAudioChannel() {
         } else {
             // Parse JSON data
             auto root = cJSON_Parse(data);
+            if (root == nullptr) {
+                ESP_LOGE(TAG, "Failed to parse JSON data: %s", data);
+                return;
+            }
+            
             auto type = cJSON_GetObjectItem(root, "type");
             if (type != NULL) {
                 if (strcmp(type->valuestring, "hello") == 0) {
@@ -104,6 +131,7 @@ bool WebsocketProtocol::OpenAudioChannel() {
         last_incoming_time_ = std::chrono::steady_clock::now();
     });
 
+    // 设置断开连接回调
     websocket_->OnDisconnected([this]() {
         ESP_LOGI(TAG, "Websocket disconnected");
         if (on_audio_channel_closed_ != nullptr) {
@@ -111,14 +139,16 @@ bool WebsocketProtocol::OpenAudioChannel() {
         }
     });
 
+    // 连接到服务器
+    ESP_LOGI(TAG, "Connecting to WebSocket server: %s", url.c_str());
     if (!websocket_->Connect(url.c_str())) {
-        ESP_LOGE(TAG, "Failed to connect to websocket server");
+        ESP_LOGE(TAG, "Failed to connect to websocket server: %s", url.c_str());
         SetError(Lang::Strings::SERVER_NOT_FOUND);
         return false;
     }
+    ESP_LOGI(TAG, "Connected to WebSocket server successfully");
 
-    // Send hello message to describe the client
-    // keys: message type, version, audio_params (format, sample_rate, channels)
+    // 发送hello消息
     std::string message = "{";
     message += "\"type\":\"hello\",";
     message += "\"version\": 1,";
@@ -126,15 +156,22 @@ bool WebsocketProtocol::OpenAudioChannel() {
     message += "\"audio_params\":{";
     message += "\"format\":\"opus\", \"sample_rate\":16000, \"channels\":1, \"frame_duration\":" + std::to_string(OPUS_FRAME_DURATION_MS);
     message += "}}";
-    websocket_->Send(message);
+    
+    if (!websocket_->Send(message)) {
+        ESP_LOGE(TAG, "Failed to send hello message");
+        SetError(Lang::Strings::SERVER_ERROR);
+        return false;
+    }
+    ESP_LOGI(TAG, "Sent hello message, waiting for server response");
 
-    // Wait for server hello
+    // 等待服务器hello响应
     EventBits_t bits = xEventGroupWaitBits(event_group_handle_, WEBSOCKET_PROTOCOL_SERVER_HELLO_EVENT, pdTRUE, pdFALSE, pdMS_TO_TICKS(10000));
     if (!(bits & WEBSOCKET_PROTOCOL_SERVER_HELLO_EVENT)) {
-        ESP_LOGE(TAG, "Failed to receive server hello");
+        ESP_LOGE(TAG, "Failed to receive server hello response (timeout)");
         SetError(Lang::Strings::SERVER_TIMEOUT);
         return false;
     }
+    ESP_LOGI(TAG, "Received server hello response, audio channel opened");
 
     if (on_audio_channel_opened_ != nullptr) {
         on_audio_channel_opened_();
@@ -146,7 +183,7 @@ bool WebsocketProtocol::OpenAudioChannel() {
 void WebsocketProtocol::ParseServerHello(const cJSON* root) {
     auto transport = cJSON_GetObjectItem(root, "transport");
     if (transport == nullptr || strcmp(transport->valuestring, "websocket") != 0) {
-        ESP_LOGE(TAG, "Unsupported transport: %s", transport->valuestring);
+        ESP_LOGE(TAG, "Unsupported transport: %s", transport ? transport->valuestring : "null");
         return;
     }
 
@@ -155,6 +192,7 @@ void WebsocketProtocol::ParseServerHello(const cJSON* root) {
         auto sample_rate = cJSON_GetObjectItem(audio_params, "sample_rate");
         if (sample_rate != NULL) {
             server_sample_rate_ = sample_rate->valueint;
+            ESP_LOGI(TAG, "Server sample rate: %d", server_sample_rate_);
         }
     }
 

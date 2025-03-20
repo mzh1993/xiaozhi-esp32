@@ -6,9 +6,11 @@
 #define AUDIO_INPUT_SAMPLE_RATE  16000
 #define AUDIO_OUTPUT_SAMPLE_RATE 24000
 
-// 如果使用 Duplex I2S 模式，请注释下面一行
+// 这个配置用于选择I2S音频接口的工作模式:
+// 1. Simplex模式: 使用独立的I2S总线分别处理音频输入和输出,需要更多GPIO但抗干扰性更好
+// 2. Duplex模式: 使用同一组I2S信号线处理输入输出,节省GPIO但可能存在串扰
+// 在ESP32-S2上,默认使用Simplex模式以获得更好的音频质量
 #define AUDIO_I2S_METHOD_SIMPLEX
-
 #ifdef AUDIO_I2S_METHOD_SIMPLEX
 
 #define AUDIO_I2S_MIC_GPIO_WS   GPIO_NUM_4
@@ -33,6 +35,8 @@
 #define TOUCH_BUTTON_GPIO       GPIO_NUM_47
 #define VOLUME_UP_BUTTON_GPIO   GPIO_NUM_40
 #define VOLUME_DOWN_BUTTON_GPIO GPIO_NUM_39
+
+
 
 #define DISPLAY_SDA_PIN GPIO_NUM_41
 #define DISPLAY_SCL_PIN GPIO_NUM_42

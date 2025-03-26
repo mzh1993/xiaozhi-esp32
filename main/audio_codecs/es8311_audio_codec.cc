@@ -18,6 +18,8 @@ Es8311AudioCodec::Es8311AudioCodec(i2c_master_bus_handle_t i2c_bus_handle, uint8
     , use_mclk_(use_mclk)
     , codec_mode_(ES8311_MODE_BOTH) {
     
+    ESP_LOGI(TAG, "初始化ES8311, I2C地址: 0x%02X, PA引脚: %d", i2c_address, pa_pin);
+    
     // 设置基本参数
     duplex_ = true;                       // 设置为双工模式，同时支持录音和播放
     input_reference_ = false;             // 不使用参考输入（用于回声消除）
@@ -31,7 +33,12 @@ Es8311AudioCodec::Es8311AudioCodec(i2c_master_bus_handle_t i2c_bus_handle, uint8
         .device_address = i2c_address_,
         .scl_speed_hz = 400000,
     };
-    ESP_ERROR_CHECK(i2c_master_bus_add_device(i2c_bus_handle_, &dev_cfg, &i2c_dev_handle_));
+    
+    esp_err_t ret = i2c_master_bus_add_device(i2c_bus_handle_, &dev_cfg, &i2c_dev_handle_);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "无法添加ES8311 I2C设备: %s", esp_err_to_name(ret));
+        return;
+    }
     
     // 配置功率放大器引脚（如果有）
     if (pa_pin_ != GPIO_NUM_NC) {
@@ -43,6 +50,7 @@ Es8311AudioCodec::Es8311AudioCodec(i2c_master_bus_handle_t i2c_bus_handle, uint8
         io_conf.intr_type = GPIO_INTR_DISABLE;
         gpio_config(&io_conf);
         gpio_set_level(pa_pin_, 0);  // 初始关闭功放
+        ESP_LOGI(TAG, "功放控制引脚已初始化: %d", pa_pin_);
     }
     
     // 创建I2S通道
@@ -117,34 +125,35 @@ bool Es8311AudioCodec::InitCodec() {
     vTaskDelay(pdMS_TO_TICKS(20));             // 等待复位完成
     WriteReg(ES8311_RESET_REG00, 0x00);        // 退出复位状态
     
-    // 1. 配置时钟管理
-    WriteReg(ES8311_CLK_MANAGER_REG01, 0x30);  // MCLK来源为外部，DIV=1.5
-    WriteReg(ES8311_CLK_MANAGER_REG02, 0x00);  // LRCK DIV=256
-    WriteReg(ES8311_CLK_MANAGER_REG03, 0x10);  // MCLK DIV=1, SCLK DIV=2
+    // 1. 配置时钟管理 - ES8311从时钟模式
+    ESP_LOGI(TAG, "ES8311配置为从时钟模式（从I2S获取时钟）");
+    WriteReg(ES8311_CLK_MANAGER_REG01, 0x3F);  // 从时钟模式，使用BCLK作为时钟源
+    WriteReg(ES8311_CLK_MANAGER_REG02, 0x00);  // LRCK DIV配置为256fs
+    WriteReg(ES8311_CLK_MANAGER_REG03, 0x00);  // 从时钟模式，不需要分频
     
     // 2. 配置格式 - I2S, 16bit
-    WriteReg(ES8311_SDPIN_REG06, 0x00);        // I2S模式
-    WriteReg(ES8311_SDPOUT_REG07, 0x00);       // I2S模式
+    WriteReg(ES8311_SDPIN_REG06, 0x02);        // I2S模式，16bit
+    WriteReg(ES8311_SDPOUT_REG07, 0x02);       // I2S模式，16bit
     
     // 3. 配置ADC
-    WriteReg(ES8311_SYSTEM_REG0A, 0x00);       // ADC/DAC模式正常工作
-    WriteReg(ES8311_SYSTEM_REG0B, 0x00);       // ADC/DAC模式正常工作
-    WriteReg(ES8311_ADC_REG10, 0x0c);          // 打开ADC电源
-    WriteReg(ES8311_ADC_REG11, 0x48);          // ADC音量调整, 0dB
-    WriteReg(ES8311_ADC_REG12, 0x00);          // 未静音
-    WriteReg(ES8311_ADC_REG13, 0x10);          // 设置ALC
-    WriteReg(ES8311_ADC_REG14, 0x16);          // 设置ALC
-    WriteReg(ES8311_ADC_REG15, 0x00);          // 设置ALC
-    WriteReg(ES8311_ADC_REG16, 0x00);          // 设置ALC
-    WriteReg(ES8311_ADC_REG17, 0xc8);          // 设置ALC
+    WriteReg(ES8311_SYSTEM_REG0A, 0x00);       // ADC时钟源为CLK1
+    WriteReg(ES8311_SYSTEM_REG0B, 0x00);       // DAC时钟源为CLK1
+    WriteReg(ES8311_ADC_REG10, 0x0C);          // 使能ADC模块电源
+    WriteReg(ES8311_ADC_REG11, 0x48);          // ADC增益为0dB
+    WriteReg(ES8311_ADC_REG12, 0x00);          // ADC未静音
+    WriteReg(ES8311_ADC_REG13, 0x10);          // ALC设置
+    WriteReg(ES8311_ADC_REG14, 0x16);          // ALC设置
+    WriteReg(ES8311_ADC_REG15, 0x00);          // ALC设置
+    WriteReg(ES8311_ADC_REG16, 0x00);          // ALC设置
+    WriteReg(ES8311_ADC_REG17, 0xC8);          // ALC设置
     
     // 4. 配置DAC
-    WriteReg(ES8311_DAC_REG31, 0x00);          // DAC电源控制 (打开)
-    WriteReg(ES8311_DAC_REG32, 0x00);          // DAC控制1
-    WriteReg(ES8311_DAC_REG33, 0x00);          // DAC控制2
-    WriteReg(ES8311_DAC_REG34, 0x00);          // DAC控制3
-    WriteReg(ES8311_DAC_REG35, 0x00);          // DAC音量控制，0dB
-    WriteReg(ES8311_DAC_REG37, 0x00);          // DAC未静音
+    WriteReg(ES8311_DAC_REG31, 0x00);          // 使能DAC模块电源
+    WriteReg(ES8311_DAC_REG32, 0x00);          // DAC时钟源为CLK1
+    WriteReg(ES8311_DAC_REG33, 0x00);          // DAC未静音
+    WriteReg(ES8311_DAC_REG34, 0x00);          // DAC左右声道音量设置
+    WriteReg(ES8311_DAC_REG35, 0x00);          // DAC音量为0dB
+    WriteReg(ES8311_DAC_REG37, 0x00);          // DAC控制寄存器
     
     // 5. 最后，启用模式选择
     uint8_t mode_reg = 0x00;
@@ -164,9 +173,10 @@ bool Es8311AudioCodec::InitCodec() {
 void Es8311AudioCodec::CreateDuplexChannels(gpio_num_t mclk, gpio_num_t bclk, gpio_num_t ws, gpio_num_t dout, gpio_num_t din) {
     assert(input_sample_rate_ == output_sample_rate_);
 
+    // ESP32-S3作为主设备，提供BCLK和LRCK
     i2s_chan_config_t chan_cfg = {
         .id = I2S_NUM_0,
-        .role = I2S_ROLE_MASTER,
+        .role = I2S_ROLE_MASTER,  // ESP32-S3作为主设备
         .dma_desc_num = 6,
         .dma_frame_num = 240,
         .auto_clear = true,
@@ -174,10 +184,25 @@ void Es8311AudioCodec::CreateDuplexChannels(gpio_num_t mclk, gpio_num_t bclk, gp
     ESP_ERROR_CHECK(i2s_new_channel(&chan_cfg, &tx_handle_, &rx_handle_));
 
     i2s_std_config_t std_cfg = {
-        .clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG(static_cast<uint32_t>(output_sample_rate_)),
-        .slot_cfg = I2S_STD_MSB_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_STEREO),
+        .clk_cfg = {
+            .sample_rate_hz = static_cast<uint32_t>(output_sample_rate_),
+            .clk_src = I2S_CLK_SRC_DEFAULT,  // 使用ESP32-S3的内部时钟源
+            .mclk_multiple = I2S_MCLK_MULTIPLE_256,
+        },
+        .slot_cfg = {
+            .data_bit_width = I2S_DATA_BIT_WIDTH_16BIT,
+            .slot_bit_width = I2S_SLOT_BIT_WIDTH_16BIT,
+            .slot_mode = I2S_SLOT_MODE_STEREO,
+            .slot_mask = I2S_STD_SLOT_BOTH,
+            .ws_width = 16,
+            .ws_pol = false,
+            .bit_shift = false,
+            .left_align = false,
+            .big_endian = false,
+            .bit_order_lsb = false,
+        },
         .gpio_cfg = {
-            .mclk = mclk,
+            .mclk = GPIO_NUM_NC,  // 不使用MCLK
             .bclk = bclk,
             .ws = ws,
             .dout = dout,
@@ -192,7 +217,11 @@ void Es8311AudioCodec::CreateDuplexChannels(gpio_num_t mclk, gpio_num_t bclk, gp
     
     ESP_ERROR_CHECK(i2s_channel_init_std_mode(tx_handle_, &std_cfg));
     ESP_ERROR_CHECK(i2s_channel_init_std_mode(rx_handle_, &std_cfg));
-    ESP_LOGI(TAG, "Duplex I2S channels created");
+    ESP_LOGI(TAG, "创建I2S通道: ESP32-S3主模式, 采样率: %d Hz", output_sample_rate_);
+    
+    // 启动I2S通道
+    ESP_ERROR_CHECK(i2s_channel_enable(tx_handle_));
+    ESP_ERROR_CHECK(i2s_channel_enable(rx_handle_));
 }
 
 void Es8311AudioCodec::SetOutputVolume(int volume) {

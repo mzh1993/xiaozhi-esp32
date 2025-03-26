@@ -19,21 +19,78 @@ LV_FONT_DECLARE(font_puhui_20_4);
 LV_FONT_DECLARE(font_awesome_20_4);
 
 class SparkBotEs8311AudioCodec : public Es8311AudioCodec {
+private:
+    bool output_enabled_ = false;
+
+    // 执行电源管理和复位流程
+    bool PerformReset() {
+        ESP_LOGI(TAG, "执行ES8311电源复位流程");
+        
+        // 获取电源控制引脚
+        const gpio_num_t vcc_pin = static_cast<gpio_num_t>(AUDIO_CODEC_VCC_CTL);
+        
+        // 检查当前电源状态
+        int power_level = gpio_get_level(vcc_pin);
+        ESP_LOGI(TAG, "ES8311当前电源状态: %d", power_level);
+        
+        // 关闭电源
+        gpio_set_level(vcc_pin, 0);
+        ESP_LOGI(TAG, "ES8311电源关闭");
+        vTaskDelay(pdMS_TO_TICKS(100));
+        
+        // 打开电源
+        gpio_set_level(vcc_pin, 1);
+        ESP_LOGI(TAG, "ES8311电源打开");
+        vTaskDelay(pdMS_TO_TICKS(300)); // 等待电源稳定
+        
+        // 再次检查电源状态
+        power_level = gpio_get_level(vcc_pin);
+        if (power_level != 1) {
+            ESP_LOGE(TAG, "ES8311电源控制失败，无法正确上电");
+            return false;
+        }
+        
+        ESP_LOGI(TAG, "ES8311复位完成");
+        return true;
+    }
+
 public:
-    SparkBotEs8311AudioCodec(i2c_master_bus_handle_t i2c_bus_handle, uint8_t i2c_address, int input_sample_rate, int output_sample_rate,
-                        gpio_num_t mclk, gpio_num_t bclk, gpio_num_t ws, gpio_num_t dout, gpio_num_t din,
-                        gpio_num_t pa_pin, bool use_mclk = true)
-        : Es8311AudioCodec(i2c_bus_handle, i2c_address, input_sample_rate, output_sample_rate,
-                           mclk, bclk, ws, dout, din, pa_pin, use_mclk) {}
+    SparkBotEs8311AudioCodec(i2c_master_bus_handle_t i2c_bus_handle)
+        : Es8311AudioCodec(
+              i2c_bus_handle,
+              AUDIO_CODEC_ES8311_ADDR,     // I2C地址
+              AUDIO_INPUT_SAMPLE_RATE,     // 输入采样率
+              AUDIO_OUTPUT_SAMPLE_RATE,    // 输出采样率
+              AUDIO_I2S_GPIO_MCLK,         // MCLK
+              AUDIO_I2S_GPIO_BCLK,         // BCLK
+              AUDIO_I2S_GPIO_WS,           // WS  
+              AUDIO_I2S_GPIO_DOUT,         // DOUT
+              AUDIO_I2S_GPIO_DIN,          // DIN
+              AUDIO_CODEC_PA_PIN,          // 功放控制引脚
+              AUDIO_I2S_GPIO_MCLK != GPIO_NUM_NC  // 是否使用MCLK
+          ) {
+        
+        ESP_LOGI(TAG, "SparkBotEs8311AudioCodec创建，执行额外的初始化");
+        
+        // 先复位一次确保状态正确
+        PerformReset();
+        
+        ESP_LOGI(TAG, "SparkBotEs8311AudioCodec初始化完成");
+    }
 
     void EnableOutput(bool enable) override {
         if (enable == output_enabled_) {
             return;
         }
+        
+        output_enabled_ = enable;
+        
         if (enable) {
             Es8311AudioCodec::EnableOutput(enable);
+            ESP_LOGI(TAG, "SparkBot ES8311输出已启用");
         } else {
-           // Nothing todo because the display io and PA io conflict
+            Es8311AudioCodec::EnableOutput(enable);
+            ESP_LOGI(TAG, "SparkBot ES8311输出已禁用");
         }
     }
 };
@@ -43,6 +100,33 @@ private:
     Button boot_button_;
     Display* display_;
     i2c_master_bus_handle_t i2c_bus_handle_;
+
+    // 初始化ES8311编解码器电源
+    void InitializeCodecPower() {
+        const gpio_num_t codec_vcc_pin = static_cast<gpio_num_t>(AUDIO_CODEC_VCC_CTL);
+        
+        // 配置电源控制引脚为输出
+        gpio_config_t io_conf = {};
+        io_conf.pin_bit_mask = (1ULL << codec_vcc_pin);
+        io_conf.mode = GPIO_MODE_OUTPUT;
+        io_conf.pull_up_en = GPIO_PULLUP_DISABLE;
+        io_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
+        io_conf.intr_type = GPIO_INTR_DISABLE;
+        ESP_ERROR_CHECK(gpio_config(&io_conf));
+        
+        // 初始化为关闭状态
+        gpio_set_level(codec_vcc_pin, 0);
+        ESP_LOGI(TAG, "ES8311电源初始化为关闭状态");
+        
+        // 打开电源
+        vTaskDelay(pdMS_TO_TICKS(10));
+        gpio_set_level(codec_vcc_pin, 1);
+        ESP_LOGI(TAG, "ES8311电源已启用");
+        
+        // 等待电源稳定
+        vTaskDelay(pdMS_TO_TICKS(300));
+        ESP_LOGI(TAG, "ES8311电源已稳定");
+    }
 
     void InitializeI2c() {
         // 配置I2C - 使用新版ESP-IDF I2C主机总线API
@@ -131,6 +215,10 @@ private:
 
 public:
     EspSparkBot() : boot_button_(BOOT_BUTTON_GPIO) {
+        // 先初始化ES8311电源
+        InitializeCodecPower();
+        
+        // 然后初始化其他硬件
         InitializeI2c();
         InitializeSpi();
         InitializeDisplay();
@@ -140,9 +228,7 @@ public:
     }
 
     virtual AudioCodec* GetAudioCodec() override {
-         static SparkBotEs8311AudioCodec audio_codec(i2c_bus_handle_, AUDIO_CODEC_ES8311_ADDR, AUDIO_INPUT_SAMPLE_RATE, AUDIO_OUTPUT_SAMPLE_RATE,
-            AUDIO_I2S_GPIO_MCLK, AUDIO_I2S_GPIO_BCLK, AUDIO_I2S_GPIO_WS, AUDIO_I2S_GPIO_DOUT, AUDIO_I2S_GPIO_DIN,
-            AUDIO_CODEC_PA_PIN);
+         static SparkBotEs8311AudioCodec audio_codec(i2c_bus_handle_);
         return &audio_codec;
     }
 

@@ -38,9 +38,9 @@ endchoice
 config WEBSOCKET_URL
     depends on CONNECTION_TYPE_WEBSOCKET
     string "Websocket URL"
-    # default "wss://www.u2440076.nyat.app:24076"
+    default "wss://www.u2440076.nyat.app:24076"
     # default "ws://192.168.8.198:8000"
-    default "wss://api.tenclass.net/xiaozhi/v1/"
+    # default "wss://api.tenclass.net/xiaozhi/v1/"
     help
         Communication with the server through websocket after wake up.
 
@@ -53,7 +53,7 @@ config WEBSOCKET_ACCESS_TOKEN
 
 choice BOARD_TYPE
     prompt "Board Type"
-    default BOARD_TYPE_BREAD_COMPACT_WIFI
+    default BOARD_TYPE_ESP_SPARKBOT
     help
         Board type. 开发板类型
     config BOARD_TYPE_BREAD_COMPACT_WIFI

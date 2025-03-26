@@ -1,77 +1,164 @@
 #include "es8311_audio_codec.h"
-
 #include <esp_log.h>
+#include <driver/i2c.h>
+#include <driver/i2c_master.h>
+#include <driver/gpio.h>
+#include <driver/i2s_std.h>
+#include <freertos/FreeRTOS.h>
 
-static const char TAG[] = "Es8311AudioCodec";
+static const char* TAG = "ES8311";
 
-Es8311AudioCodec::Es8311AudioCodec(void* i2c_master_handle, i2c_port_t i2c_port, int input_sample_rate, int output_sample_rate,
+// 构造函数
+Es8311AudioCodec::Es8311AudioCodec(i2c_master_bus_handle_t i2c_bus_handle, uint8_t i2c_address, int input_sample_rate, int output_sample_rate,
     gpio_num_t mclk, gpio_num_t bclk, gpio_num_t ws, gpio_num_t dout, gpio_num_t din,
-    gpio_num_t pa_pin, uint8_t es8311_addr, bool use_mclk) {
-    duplex_ = true; // 是否双工
-    input_reference_ = false; // 是否使用参考输入，实现回声消除
-    input_channels_ = 1; // 输入通道数
-    input_sample_rate_ = input_sample_rate;
-    output_sample_rate_ = output_sample_rate;
-    pa_pin_ = pa_pin;
+    gpio_num_t pa_pin, bool use_mclk)
+    : i2c_bus_handle_(i2c_bus_handle)
+    , i2c_address_(i2c_address)
+    , pa_pin_(pa_pin)
+    , use_mclk_(use_mclk)
+    , codec_mode_(ES8311_MODE_BOTH) {
+    
+    // 设置基本参数
+    duplex_ = true;                       // 设置为双工模式，同时支持录音和播放
+    input_reference_ = false;             // 不使用参考输入（用于回声消除）
+    input_channels_ = 1;                  // 输入通道数为单声道
+    input_sample_rate_ = input_sample_rate;  // 设置输入采样率
+    output_sample_rate_ = output_sample_rate; // 设置输出采样率
+    
+    // 配置I2C设备
+    i2c_device_config_t dev_cfg = {
+        .dev_addr_length = I2C_ADDR_BIT_LEN_7,
+        .device_address = i2c_address_,
+        .scl_speed_hz = 400000,
+    };
+    ESP_ERROR_CHECK(i2c_master_bus_add_device(i2c_bus_handle_, &dev_cfg, &i2c_dev_handle_));
+    
+    // 配置功率放大器引脚（如果有）
+    if (pa_pin_ != GPIO_NUM_NC) {
+        gpio_config_t io_conf = {};
+        io_conf.pin_bit_mask = (1ULL << pa_pin_);
+        io_conf.mode = GPIO_MODE_OUTPUT;
+        io_conf.pull_up_en = GPIO_PULLUP_DISABLE;
+        io_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
+        io_conf.intr_type = GPIO_INTR_DISABLE;
+        gpio_config(&io_conf);
+        gpio_set_level(pa_pin_, 0);  // 初始关闭功放
+    }
+    
+    // 创建I2S通道
     CreateDuplexChannels(mclk, bclk, ws, dout, din);
-
-    // Do initialize of related interface: data_if, ctrl_if and gpio_if
-    audio_codec_i2s_cfg_t i2s_cfg = {
-        .port = I2S_NUM_0,
-        .rx_handle = rx_handle_,
-        .tx_handle = tx_handle_,
-    };
-    data_if_ = audio_codec_new_i2s_data(&i2s_cfg);
-    assert(data_if_ != NULL);
-
-    // Output
-    audio_codec_i2c_cfg_t i2c_cfg = {
-        .port = i2c_port,
-        .addr = es8311_addr,
-        .bus_handle = i2c_master_handle,
-    };
-    ctrl_if_ = audio_codec_new_i2c_ctrl(&i2c_cfg);
-    assert(ctrl_if_ != NULL);
-
-    gpio_if_ = audio_codec_new_gpio();
-    assert(gpio_if_ != NULL);
-
-    es8311_codec_cfg_t es8311_cfg = {};
-    es8311_cfg.ctrl_if = ctrl_if_;
-    es8311_cfg.gpio_if = gpio_if_;
-    es8311_cfg.codec_mode = ESP_CODEC_DEV_WORK_MODE_BOTH;
-    es8311_cfg.pa_pin = pa_pin;
-    es8311_cfg.use_mclk = use_mclk;
-    es8311_cfg.hw_gain.pa_voltage = 5.0;
-    es8311_cfg.hw_gain.codec_dac_voltage = 3.3;
-    codec_if_ = es8311_codec_new(&es8311_cfg);
-    assert(codec_if_ != NULL);
-
-    esp_codec_dev_cfg_t dev_cfg = {
-        .dev_type = ESP_CODEC_DEV_TYPE_OUT,
-        .codec_if = codec_if_,
-        .data_if = data_if_,
-    };
-    output_dev_ = esp_codec_dev_new(&dev_cfg);
-    assert(output_dev_ != NULL);
-    dev_cfg.dev_type = ESP_CODEC_DEV_TYPE_IN;
-    input_dev_ = esp_codec_dev_new(&dev_cfg);
-    assert(input_dev_ != NULL);
-    esp_codec_set_disable_when_closed(output_dev_, false);
-    esp_codec_set_disable_when_closed(input_dev_, false);
-    ESP_LOGI(TAG, "Es8311AudioCodec initialized");
+    
+    // 初始化ES8311编解码器
+    InitCodec();
+    
+    ESP_LOGI(TAG, "ES8311音频编解码器已初始化");
 }
 
 Es8311AudioCodec::~Es8311AudioCodec() {
-    ESP_ERROR_CHECK(esp_codec_dev_close(output_dev_));
-    esp_codec_dev_delete(output_dev_);
-    ESP_ERROR_CHECK(esp_codec_dev_close(input_dev_));
-    esp_codec_dev_delete(input_dev_);
+    // 关闭功率放大器
+    if (pa_pin_ != GPIO_NUM_NC) {
+        gpio_set_level(pa_pin_, 0);
+    }
+    
+    // 删除I2C设备
+    if (i2c_dev_handle_) {
+        i2c_master_bus_rm_device(i2c_dev_handle_);
+    }
+    
+    // 关闭I2S通道
+    if (tx_handle_) {
+        i2s_channel_disable(tx_handle_);
+        i2s_del_channel(tx_handle_);
+    }
+    if (rx_handle_) {
+        i2s_channel_disable(rx_handle_);
+        i2s_del_channel(rx_handle_);
+    }
+}
 
-    audio_codec_delete_codec_if(codec_if_);
-    audio_codec_delete_ctrl_if(ctrl_if_);
-    audio_codec_delete_gpio_if(gpio_if_);
-    audio_codec_delete_data_if(data_if_);
+// 实现I2C寄存器读写 - 使用新版ESP-IDF I2C主机总线API
+bool Es8311AudioCodec::WriteReg(uint8_t reg_addr, uint8_t data) {
+    uint8_t write_buf[2] = {reg_addr, data};
+    esp_err_t ret = i2c_master_transmit(i2c_dev_handle_, write_buf, sizeof(write_buf), -1);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "写寄存器失败: 0x%02X = 0x%02X, err = %d", reg_addr, data, ret);
+        return false;
+    }
+    return true;
+}
+
+bool Es8311AudioCodec::ReadReg(uint8_t reg_addr, uint8_t* data) {
+    if (data == nullptr) {
+        return false;
+    }
+
+    // 先写寄存器地址
+    esp_err_t ret = i2c_master_transmit(i2c_dev_handle_, &reg_addr, 1, -1);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "写寄存器地址失败: 0x%02X, err = %d", reg_addr, ret);
+        return false;
+    }
+    
+    // 然后读取数据
+    ret = i2c_master_receive(i2c_dev_handle_, data, 1, -1);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "读寄存器失败: 0x%02X, err = %d", reg_addr, ret);
+        return false;
+    }
+    return true;
+}
+
+// 初始化ES8311编解码器
+bool Es8311AudioCodec::InitCodec() {
+    ESP_LOGI(TAG, "初始化ES8311编解码器...");
+    
+    // 复位编解码器
+    WriteReg(ES8311_RESET_REG00, 0x1F);        // 复位所有寄存器
+    vTaskDelay(pdMS_TO_TICKS(20));             // 等待复位完成
+    WriteReg(ES8311_RESET_REG00, 0x00);        // 退出复位状态
+    
+    // 1. 配置时钟管理
+    WriteReg(ES8311_CLK_MANAGER_REG01, 0x30);  // MCLK来源为外部，DIV=1.5
+    WriteReg(ES8311_CLK_MANAGER_REG02, 0x00);  // LRCK DIV=256
+    WriteReg(ES8311_CLK_MANAGER_REG03, 0x10);  // MCLK DIV=1, SCLK DIV=2
+    
+    // 2. 配置格式 - I2S, 16bit
+    WriteReg(ES8311_SDPIN_REG06, 0x00);        // I2S模式
+    WriteReg(ES8311_SDPOUT_REG07, 0x00);       // I2S模式
+    
+    // 3. 配置ADC
+    WriteReg(ES8311_SYSTEM_REG0A, 0x00);       // ADC/DAC模式正常工作
+    WriteReg(ES8311_SYSTEM_REG0B, 0x00);       // ADC/DAC模式正常工作
+    WriteReg(ES8311_ADC_REG10, 0x0c);          // 打开ADC电源
+    WriteReg(ES8311_ADC_REG11, 0x48);          // ADC音量调整, 0dB
+    WriteReg(ES8311_ADC_REG12, 0x00);          // 未静音
+    WriteReg(ES8311_ADC_REG13, 0x10);          // 设置ALC
+    WriteReg(ES8311_ADC_REG14, 0x16);          // 设置ALC
+    WriteReg(ES8311_ADC_REG15, 0x00);          // 设置ALC
+    WriteReg(ES8311_ADC_REG16, 0x00);          // 设置ALC
+    WriteReg(ES8311_ADC_REG17, 0xc8);          // 设置ALC
+    
+    // 4. 配置DAC
+    WriteReg(ES8311_DAC_REG31, 0x00);          // DAC电源控制 (打开)
+    WriteReg(ES8311_DAC_REG32, 0x00);          // DAC控制1
+    WriteReg(ES8311_DAC_REG33, 0x00);          // DAC控制2
+    WriteReg(ES8311_DAC_REG34, 0x00);          // DAC控制3
+    WriteReg(ES8311_DAC_REG35, 0x00);          // DAC音量控制，0dB
+    WriteReg(ES8311_DAC_REG37, 0x00);          // DAC未静音
+    
+    // 5. 最后，启用模式选择
+    uint8_t mode_reg = 0x00;
+    if (codec_mode_ & ES8311_MODE_ADC) {
+        mode_reg |= 0x10;  // 启用ADC
+    }
+    if (codec_mode_ & ES8311_MODE_DAC) {
+        mode_reg |= 0x01;  // 启用DAC
+    }
+    WriteReg(ES8311_SYSTEM_REG08, mode_reg);  // 设置工作模式
+    WriteReg(ES8311_SYSTEM_REG09, 0x00);      // 取消静音
+    
+    ESP_LOGI(TAG, "ES8311初始化完成，模式: 0x%02X", codec_mode_);
+    return true;
 }
 
 void Es8311AudioCodec::CreateDuplexChannels(gpio_num_t mclk, gpio_num_t bclk, gpio_num_t ws, gpio_num_t dout, gpio_num_t din) {
@@ -82,35 +169,13 @@ void Es8311AudioCodec::CreateDuplexChannels(gpio_num_t mclk, gpio_num_t bclk, gp
         .role = I2S_ROLE_MASTER,
         .dma_desc_num = 6,
         .dma_frame_num = 240,
-        .auto_clear_after_cb = true,
-        .auto_clear_before_cb = false,
-        .intr_priority = 0,
+        .auto_clear = true,
     };
     ESP_ERROR_CHECK(i2s_new_channel(&chan_cfg, &tx_handle_, &rx_handle_));
 
     i2s_std_config_t std_cfg = {
-        .clk_cfg = {
-            .sample_rate_hz = (uint32_t)output_sample_rate_,
-            .clk_src = I2S_CLK_SRC_DEFAULT,
-            .mclk_multiple = I2S_MCLK_MULTIPLE_256,
-			#ifdef   I2S_HW_VERSION_2    
-				.ext_clk_freq_hz = 0,
-			#endif
-        },
-        .slot_cfg = {
-            .data_bit_width = I2S_DATA_BIT_WIDTH_16BIT,
-            .slot_bit_width = I2S_SLOT_BIT_WIDTH_AUTO,
-            .slot_mode = I2S_SLOT_MODE_STEREO,
-            .slot_mask = I2S_STD_SLOT_BOTH,
-            .ws_width = I2S_DATA_BIT_WIDTH_16BIT,
-            .ws_pol = false,
-            .bit_shift = true,
-            #ifdef   I2S_HW_VERSION_2   
-                .left_align = true,
-                .big_endian = false,
-                .bit_order_lsb = false
-            #endif
-        },
+        .clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG(static_cast<uint32_t>(output_sample_rate_)),
+        .slot_cfg = I2S_STD_MSB_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_STEREO),
         .gpio_cfg = {
             .mclk = mclk,
             .bclk = bclk,
@@ -120,18 +185,29 @@ void Es8311AudioCodec::CreateDuplexChannels(gpio_num_t mclk, gpio_num_t bclk, gp
             .invert_flags = {
                 .mclk_inv = false,
                 .bclk_inv = false,
-                .ws_inv = false
-            }
-        }
+                .ws_inv = false,
+            },
+        },
     };
-
+    
     ESP_ERROR_CHECK(i2s_channel_init_std_mode(tx_handle_, &std_cfg));
     ESP_ERROR_CHECK(i2s_channel_init_std_mode(rx_handle_, &std_cfg));
-    ESP_LOGI(TAG, "Duplex channels created");
+    ESP_LOGI(TAG, "Duplex I2S channels created");
 }
 
 void Es8311AudioCodec::SetOutputVolume(int volume) {
-    ESP_ERROR_CHECK(esp_codec_dev_set_out_vol(output_dev_, volume));
+    // 限制音量在0-100范围内
+    if (volume < 0) volume = 0;
+    if (volume > 100) volume = 100;
+    
+    // 将0-100范围转换为ES8311的0-255范围 (0x00-0xFF)
+    // ES8311的音量是反向的，0xFF是最小音量，0x00是最大音量
+    uint8_t es8311_volume = 0xFF - (volume * 255 / 100);
+    
+    // 设置ES8311的DAC音量寄存器
+    WriteReg(ES8311_DAC_REG35, es8311_volume);
+    
+    // 调用父类方法保存设置
     AudioCodec::SetOutputVolume(volume);
 }
 
@@ -139,19 +215,18 @@ void Es8311AudioCodec::EnableInput(bool enable) {
     if (enable == input_enabled_) {
         return;
     }
+    
     if (enable) {
-        esp_codec_dev_sample_info_t fs = {
-            .bits_per_sample = 16,
-            .channel = 1,
-            .channel_mask = 0,
-            .sample_rate = (uint32_t)input_sample_rate_,
-            .mclk_multiple = 0,
-        };
-        ESP_ERROR_CHECK(esp_codec_dev_open(input_dev_, &fs));
-        ESP_ERROR_CHECK(esp_codec_dev_set_in_gain(input_dev_, 40.0));
+        // 启用ADC
+        WriteReg(ES8311_SYSTEM_REG08, codec_mode_ | 0x10); // 设置ADC工作模式
+        WriteReg(ES8311_ADC_REG12, 0x00); // 取消ADC静音
     } else {
-        ESP_ERROR_CHECK(esp_codec_dev_close(input_dev_));
+        // 禁用ADC
+        WriteReg(ES8311_ADC_REG12, 0x01); // 设置ADC静音
+        WriteReg(ES8311_SYSTEM_REG08, codec_mode_ & ~0x10); // 关闭ADC
     }
+    
+    // 调用父类方法更新状态
     AudioCodec::EnableInput(enable);
 }
 
@@ -159,39 +234,57 @@ void Es8311AudioCodec::EnableOutput(bool enable) {
     if (enable == output_enabled_) {
         return;
     }
+    
     if (enable) {
-        // Play 16bit 1 channel
-        esp_codec_dev_sample_info_t fs = {
-            .bits_per_sample = 16,
-            .channel = 1,
-            .channel_mask = 0,
-            .sample_rate = (uint32_t)output_sample_rate_,
-            .mclk_multiple = 0,
-        };
-        ESP_ERROR_CHECK(esp_codec_dev_open(output_dev_, &fs));
-        ESP_ERROR_CHECK(esp_codec_dev_set_out_vol(output_dev_, output_volume_));
+        // 启用DAC
+        WriteReg(ES8311_SYSTEM_REG08, codec_mode_ | 0x01); // 设置DAC工作模式
+        WriteReg(ES8311_DAC_REG37, 0x00); // 取消DAC静音
+        
+        // 控制功率放大器
         if (pa_pin_ != GPIO_NUM_NC) {
             gpio_set_level(pa_pin_, 1);
         }
     } else {
-        ESP_ERROR_CHECK(esp_codec_dev_close(output_dev_));
+        // 禁用DAC
+        WriteReg(ES8311_DAC_REG37, 0x01); // 设置DAC静音
+        WriteReg(ES8311_SYSTEM_REG08, codec_mode_ & ~0x01); // 关闭DAC
+        
+        // 关闭功率放大器
         if (pa_pin_ != GPIO_NUM_NC) {
             gpio_set_level(pa_pin_, 0);
         }
     }
+    
+    // 调用父类方法更新状态
     AudioCodec::EnableOutput(enable);
 }
 
 int Es8311AudioCodec::Read(int16_t* dest, int samples) {
-    if (input_enabled_) {
-        ESP_ERROR_CHECK_WITHOUT_ABORT(esp_codec_dev_read(input_dev_, (void*)dest, samples * sizeof(int16_t)));
+    if (!input_enabled_ || !dest || samples <= 0) {
+        return 0;
     }
-    return samples;
+    
+    size_t bytes_read = 0;
+    esp_err_t ret = i2s_channel_read(rx_handle_, dest, samples * sizeof(int16_t), &bytes_read, portMAX_DELAY);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "I2S读取失败: %d", ret);
+        return 0;
+    }
+    
+    return bytes_read / sizeof(int16_t);
 }
 
 int Es8311AudioCodec::Write(const int16_t* data, int samples) {
-    if (output_enabled_) {
-        ESP_ERROR_CHECK_WITHOUT_ABORT(esp_codec_dev_write(output_dev_, (void*)data, samples * sizeof(int16_t)));
+    if (!output_enabled_ || !data || samples <= 0) {
+        return 0;
     }
-    return samples;
+    
+    size_t bytes_written = 0;
+    esp_err_t ret = i2s_channel_write(tx_handle_, data, samples * sizeof(int16_t), &bytes_written, portMAX_DELAY);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "I2S写入失败: %d", ret);
+        return 0;
+    }
+    
+    return bytes_written / sizeof(int16_t);
 }

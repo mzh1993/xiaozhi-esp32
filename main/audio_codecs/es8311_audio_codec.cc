@@ -100,8 +100,8 @@ void Es8311AudioCodec::CreateDuplexChannels(gpio_num_t mclk, gpio_num_t bclk, gp
         .slot_cfg = {
             .data_bit_width = I2S_DATA_BIT_WIDTH_16BIT,
             .slot_bit_width = I2S_SLOT_BIT_WIDTH_AUTO,
-            .slot_mode = I2S_SLOT_MODE_MONO,  // 明确设置为单声道模式
-            .slot_mask = I2S_STD_SLOT_LEFT,   // 仅使用左声道
+            .slot_mode = I2S_SLOT_MODE_STEREO,  
+            .slot_mask = I2S_STD_SLOT_BOTH,   
             .ws_width = I2S_DATA_BIT_WIDTH_16BIT,
             .ws_pol = false,
             .bit_shift = true,
@@ -146,8 +146,8 @@ void Es8311AudioCodec::EnableInput(bool enable) {
     if (enable) {
         esp_codec_dev_sample_info_t fs = {
             .bits_per_sample = 16,
-            .channel = 1,  // 明确指定单声道
-            .channel_mask = ESP_CODEC_DEV_MAKE_CHANNEL_MASK(0),  // 使用左声道
+            .channel = 1, 
+            .channel_mask = 0,  
             .sample_rate = (uint32_t)input_sample_rate_,
             .mclk_multiple = 0,  // 不使用MCLK
         };
@@ -167,8 +167,8 @@ void Es8311AudioCodec::EnableOutput(bool enable) {
         // Play 16bit 1 channel
         esp_codec_dev_sample_info_t fs = {
             .bits_per_sample = 16,
-            .channel = 1,  // 明确指定单声道
-            .channel_mask = ESP_CODEC_DEV_MAKE_CHANNEL_MASK(0),  // 使用左声道
+            .channel = 1,  
+            .channel_mask = 0,  
             .sample_rate = (uint32_t)output_sample_rate_,
             .mclk_multiple = 0,  // 不使用MCLK
         };

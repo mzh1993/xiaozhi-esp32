@@ -128,7 +128,7 @@ private:
         auto& thing_manager = iot::ThingManager::GetInstance();
         thing_manager.AddThing(iot::CreateThing("Speaker"));
         thing_manager.AddThing(iot::CreateThing("Screen"));
-        thing_manager.AddThing(iot::CreateThing("Chassis"));
+        // thing_manager.AddThing(iot::CreateThing("Chassis"));
     }
 
 public:

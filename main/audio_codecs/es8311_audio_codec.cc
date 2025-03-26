@@ -79,7 +79,7 @@ void Es8311AudioCodec::CreateDuplexChannels(gpio_num_t mclk, gpio_num_t bclk, gp
 
     i2s_chan_config_t chan_cfg = {
         .id = I2S_NUM_0,
-        .role = I2S_ROLE_MASTER,
+        .role = I2S_ROLE_MASTER,  // ESP32-S3为主设备
         .dma_desc_num = 6,
         .dma_frame_num = 240,
         .auto_clear_after_cb = true,
@@ -90,9 +90,9 @@ void Es8311AudioCodec::CreateDuplexChannels(gpio_num_t mclk, gpio_num_t bclk, gp
 
     i2s_std_config_t std_cfg = {
         .clk_cfg = {
-            .sample_rate_hz = (uint32_t)output_sample_rate_,
+            .sample_rate_hz = (uint32_t)output_sample_rate_,  // 16kHz
             .clk_src = I2S_CLK_SRC_DEFAULT,
-            .mclk_multiple = I2S_MCLK_MULTIPLE_256,
+            .mclk_multiple = I2S_MCLK_MULTIPLE_256,  // 仍计算MCLK但不输出
 			#ifdef   I2S_HW_VERSION_2    
 				.ext_clk_freq_hz = 0,
 			#endif
@@ -100,8 +100,8 @@ void Es8311AudioCodec::CreateDuplexChannels(gpio_num_t mclk, gpio_num_t bclk, gp
         .slot_cfg = {
             .data_bit_width = I2S_DATA_BIT_WIDTH_16BIT,
             .slot_bit_width = I2S_SLOT_BIT_WIDTH_AUTO,
-            .slot_mode = I2S_SLOT_MODE_STEREO,
-            .slot_mask = I2S_STD_SLOT_BOTH,
+            .slot_mode = I2S_SLOT_MODE_MONO,  // 明确设置为单声道模式
+            .slot_mask = I2S_STD_SLOT_LEFT,   // 仅使用左声道
             .ws_width = I2S_DATA_BIT_WIDTH_16BIT,
             .ws_pol = false,
             .bit_shift = true,
@@ -112,7 +112,7 @@ void Es8311AudioCodec::CreateDuplexChannels(gpio_num_t mclk, gpio_num_t bclk, gp
             #endif
         },
         .gpio_cfg = {
-            .mclk = mclk,
+            .mclk = mclk,  // 传入GPIO_NUM_NC表示不使用MCLK
             .bclk = bclk,
             .ws = ws,
             .dout = dout,
@@ -127,7 +127,11 @@ void Es8311AudioCodec::CreateDuplexChannels(gpio_num_t mclk, gpio_num_t bclk, gp
 
     ESP_ERROR_CHECK(i2s_channel_init_std_mode(tx_handle_, &std_cfg));
     ESP_ERROR_CHECK(i2s_channel_init_std_mode(rx_handle_, &std_cfg));
-    ESP_LOGI(TAG, "Duplex channels created");
+    if (mclk == GPIO_NUM_NC) {
+        ESP_LOGI(TAG, "Mono duplex channels created without MCLK");
+    } else {
+        ESP_LOGI(TAG, "Duplex channels created");
+    }
 }
 
 void Es8311AudioCodec::SetOutputVolume(int volume) {
@@ -142,10 +146,10 @@ void Es8311AudioCodec::EnableInput(bool enable) {
     if (enable) {
         esp_codec_dev_sample_info_t fs = {
             .bits_per_sample = 16,
-            .channel = 1,
-            .channel_mask = 0,
+            .channel = 1,  // 明确指定单声道
+            .channel_mask = ESP_CODEC_DEV_MAKE_CHANNEL_MASK(0),  // 使用左声道
             .sample_rate = (uint32_t)input_sample_rate_,
-            .mclk_multiple = 0,
+            .mclk_multiple = 0,  // 不使用MCLK
         };
         ESP_ERROR_CHECK(esp_codec_dev_open(input_dev_, &fs));
         ESP_ERROR_CHECK(esp_codec_dev_set_in_gain(input_dev_, 40.0));
@@ -163,10 +167,10 @@ void Es8311AudioCodec::EnableOutput(bool enable) {
         // Play 16bit 1 channel
         esp_codec_dev_sample_info_t fs = {
             .bits_per_sample = 16,
-            .channel = 1,
-            .channel_mask = 0,
+            .channel = 1,  // 明确指定单声道
+            .channel_mask = ESP_CODEC_DEV_MAKE_CHANNEL_MASK(0),  // 使用左声道
             .sample_rate = (uint32_t)output_sample_rate_,
-            .mclk_multiple = 0,
+            .mclk_multiple = 0,  // 不使用MCLK
         };
         ESP_ERROR_CHECK(esp_codec_dev_open(output_dev_, &fs));
         ESP_ERROR_CHECK(esp_codec_dev_set_out_vol(output_dev_, output_volume_));

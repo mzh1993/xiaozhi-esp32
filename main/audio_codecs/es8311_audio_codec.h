@@ -9,7 +9,7 @@
 #include <esp_codec_dev_defaults.h>
 
 class Es8311AudioCodec : public AudioCodec {
-private:
+protected:
     const audio_codec_data_if_t* data_if_ = nullptr;
     const audio_codec_ctrl_if_t* ctrl_if_ = nullptr;
     const audio_codec_if_t* codec_if_ = nullptr;

@@ -18,33 +18,34 @@
 LV_FONT_DECLARE(font_puhui_20_4);
 LV_FONT_DECLARE(font_awesome_20_4);
 
-class SparkBotEs8311AudioCodec : public Es8311AudioCodec {
-private:    
+// 前置声明
+class EspSparkBot;
 
-public:
-    SparkBotEs8311AudioCodec(void* i2c_master_handle, i2c_port_t i2c_port, int input_sample_rate, int output_sample_rate,
-                        gpio_num_t mclk, gpio_num_t bclk, gpio_num_t ws, gpio_num_t dout, gpio_num_t din,
-                        gpio_num_t pa_pin, uint8_t es8311_addr, bool use_mclk = true)
-        : Es8311AudioCodec(i2c_master_handle, i2c_port, input_sample_rate, output_sample_rate,
-                             mclk,  bclk,  ws,  dout,  din,pa_pin,  es8311_addr,  use_mclk = true) {}
-
-    void EnableOutput(bool enable) override {
-        if (enable == output_enabled_) {
-            return;
-        }
-        if (enable) {
-            Es8311AudioCodec::EnableOutput(enable);
-        } else {
-           // Nothing todo because the display io and PA io conflict
-        }
-    }
-};
-
+// 首先定义EspSparkBot类
 class EspSparkBot : public WifiBoard {
 private:
     i2c_master_bus_handle_t i2c_bus_;
     Button boot_button_;
     Display* display_;
+    
+    // 添加音频电源控制初始化函数
+    void InitializeAudioPower() {
+        gpio_config_t io_conf = {
+            .pin_bit_mask = (1ULL << AUDIO_PREP_VCC_CTL),
+            .mode = GPIO_MODE_OUTPUT,
+            .pull_up_en = GPIO_PULLUP_DISABLE,
+            .pull_down_en = GPIO_PULLDOWN_DISABLE,
+            .intr_type = GPIO_INTR_DISABLE
+        };
+        ESP_ERROR_CHECK(gpio_config(&io_conf));
+        
+        // 默认启用音频电路供电
+        ESP_ERROR_CHECK(gpio_set_level(AUDIO_PREP_VCC_CTL, 1));
+        ESP_LOGI(TAG, "Audio power enabled");
+        
+        // 给电路足够的启动时间
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
 
     void InitializeI2c() {
         // Initialize I2C peripheral
@@ -132,6 +133,7 @@ private:
 
 public:
     EspSparkBot() : boot_button_(BOOT_BUTTON_GPIO) {
+        InitializeAudioPower(); // 在其他初始化前先初始化音频电源
         InitializeI2c();
         InitializeSpi();
         InitializeDisplay();
@@ -140,12 +142,7 @@ public:
         GetBacklight()->RestoreBrightness();
     }
 
-    virtual AudioCodec* GetAudioCodec() override {
-         static SparkBotEs8311AudioCodec audio_codec(i2c_bus_, I2C_NUM_0, AUDIO_INPUT_SAMPLE_RATE, AUDIO_OUTPUT_SAMPLE_RATE,
-            AUDIO_I2S_GPIO_MCLK, AUDIO_I2S_GPIO_BCLK, AUDIO_I2S_GPIO_WS, AUDIO_I2S_GPIO_DOUT, AUDIO_I2S_GPIO_DIN,
-            AUDIO_CODEC_PA_PIN, AUDIO_CODEC_ES8311_ADDR);
-        return &audio_codec;
-    }
+    virtual AudioCodec* GetAudioCodec() override;  // 前置声明，实现在后面
 
     virtual Display* GetDisplay() override {
         return display_;
@@ -155,6 +152,120 @@ public:
         static PwmBacklight backlight(DISPLAY_BACKLIGHT_PIN, DISPLAY_BACKLIGHT_OUTPUT_INVERT);
         return &backlight;
     }
+
+    // 添加电源控制方法
+    void SetAudioPower(bool enable) {
+        ESP_ERROR_CHECK(gpio_set_level(AUDIO_PREP_VCC_CTL, enable ? 1 : 0));
+        ESP_LOGI(TAG, "Audio power %s", enable ? "enabled" : "disabled");
+        
+        if (enable) {
+            // 给电路足够的上电稳定时间
+            vTaskDelay(pdMS_TO_TICKS(100));
+        }
+    }
 };
+
+// 获取正确类型的板子实例的辅助函数
+EspSparkBot* GetEspSparkBot() {
+    // Board::GetInstance()返回的是基类引用
+    Board& board = Board::GetInstance();
+    
+    // 在这个系统中我们知道GetInstance返回的是EspSparkBot
+    // 由于-fno-rtti编译选项，不能使用dynamic_cast，改用static_cast
+    EspSparkBot* esp_board = static_cast<EspSparkBot*>(&board);
+    
+    return esp_board;
+}
+
+// 现在定义SparkBotEs8311AudioCodec类，它可以正确引用EspSparkBot
+class SparkBotEs8311AudioCodec : public Es8311AudioCodec {
+private:
+    bool initialized_as_slave_ = false;
+
+public:
+    SparkBotEs8311AudioCodec(void* i2c_master_handle, i2c_port_t i2c_port, int input_sample_rate, int output_sample_rate,
+                      gpio_num_t mclk, gpio_num_t bclk, gpio_num_t ws, gpio_num_t dout, gpio_num_t din,
+                      gpio_num_t pa_pin, uint8_t es8311_addr)
+        : Es8311AudioCodec(i2c_master_handle, i2c_port, input_sample_rate, output_sample_rate,
+                           mclk, bclk, ws, dout, din, pa_pin, es8311_addr, false) { // 明确指定不使用MCLK
+    }
+
+    void EnableInput(bool enable) override {
+        if (enable == input_enabled_) {
+            return;
+        }
+        
+        if (enable) {
+            // 使用工厂函数获取EspSparkBot实例
+            EspSparkBot* board = GetEspSparkBot();
+            if (board) {
+                // 确保音频电路已上电
+                board->SetAudioPower(true);
+            }
+            
+            // 让父类方法处理实际的I2S和ES8311配置
+            Es8311AudioCodec::EnableInput(true);
+        } else {
+            Es8311AudioCodec::EnableInput(false);
+            
+            // 如果输入输出都禁用，考虑关闭电源
+            if (!output_enabled_) {
+                // 延迟500ms后关闭，避免频繁开关
+                vTaskDelay(pdMS_TO_TICKS(500));
+                if (!input_enabled_ && !output_enabled_) {
+                    EspSparkBot* board = GetEspSparkBot();
+                    if (board) {
+                        board->SetAudioPower(false);
+                    }
+                }
+            }
+        }
+    }
+
+    void EnableOutput(bool enable) override {
+        if (enable == output_enabled_) {
+            return;
+        }
+        
+        if (enable) {
+            // 使用工厂函数获取EspSparkBot实例
+            EspSparkBot* board = GetEspSparkBot();
+            if (board) {
+                // 确保音频电路已上电
+                board->SetAudioPower(true);
+            }
+            
+            // 让父类方法处理实际的I2S和ES8311配置
+            Es8311AudioCodec::EnableOutput(true);
+        } else {
+            // Display IO和PA IO冲突，特殊处理
+            if (pa_pin_ != GPIO_NUM_NC) {
+                gpio_set_level(pa_pin_, 0);
+            }
+            ESP_ERROR_CHECK(esp_codec_dev_close(output_dev_));
+            output_enabled_ = false;
+            
+            // 如果输入输出都禁用，考虑关闭电源
+            if (!input_enabled_) {
+                // 延迟500ms后关闭，避免频繁开关
+                vTaskDelay(pdMS_TO_TICKS(500));
+                if (!input_enabled_ && !output_enabled_) {
+                    EspSparkBot* board = GetEspSparkBot();
+                    if (board) {
+                        board->SetAudioPower(false);
+                    }
+                }
+            }
+        }
+    }
+};
+
+// 现在实现之前前置声明的EspSparkBot的GetAudioCodec方法
+AudioCodec* EspSparkBot::GetAudioCodec() {
+    static SparkBotEs8311AudioCodec audio_codec(i2c_bus_, I2C_NUM_0, AUDIO_INPUT_SAMPLE_RATE, AUDIO_OUTPUT_SAMPLE_RATE,
+        AUDIO_I2S_GPIO_MCLK, AUDIO_I2S_GPIO_BCLK, AUDIO_I2S_GPIO_WS, AUDIO_I2S_GPIO_DOUT, AUDIO_I2S_GPIO_DIN,
+        AUDIO_CODEC_PA_PIN, AUDIO_CODEC_ES8311_ADDR);
+    return &audio_codec;
+}
 
 DECLARE_BOARD(EspSparkBot);

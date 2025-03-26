@@ -22,11 +22,34 @@ class SparkBotEs8311AudioCodec : public Es8311AudioCodec {
 private:
     bool output_enabled_ = false;
 
-    // 执行电源管理和复位流程
+    // 添加一个新的辅助函数来打印ES8311关键寄存器状态
+    void PrintCodecStatus() {
+        uint8_t reg_values[8];
+        
+        // 读取关键寄存器状态
+        ReadReg(ES8311_RESET_REG00, &reg_values[0]);
+        ReadReg(ES8311_CLK_MANAGER_REG01, &reg_values[1]);
+        ReadReg(ES8311_SYSTEM_REG08, &reg_values[2]);
+        ReadReg(ES8311_SYSTEM_REG09, &reg_values[3]);
+        ReadReg(ES8311_ADC_REG10, &reg_values[4]);
+        ReadReg(ES8311_DAC_REG31, &reg_values[5]);
+        ReadReg(ES8311_DAC_REG37, &reg_values[6]);
+        ReadReg(ES8311_GPIO_REG44, &reg_values[7]);
+        
+        ESP_LOGI(TAG, "ES8311 寄存器状态:");
+        ESP_LOGI(TAG, "RESET_REG00: 0x%02X (期望值: 0x00)", reg_values[0]);
+        ESP_LOGI(TAG, "CLK_MANAGER_REG01: 0x%02X (期望值: 0x3F)", reg_values[1]);
+        ESP_LOGI(TAG, "SYSTEM_REG08: 0x%02X (工作模式)", reg_values[2]);
+        ESP_LOGI(TAG, "SYSTEM_REG09: 0x%02X (静音控制)", reg_values[3]);
+        ESP_LOGI(TAG, "ADC_REG10: 0x%02X (ADC电源)", reg_values[4]);
+        ESP_LOGI(TAG, "DAC_REG31: 0x%02X (DAC电源)", reg_values[5]);
+        ESP_LOGI(TAG, "DAC_REG37: 0x%02X (DAC控制)", reg_values[6]);
+        ESP_LOGI(TAG, "GPIO_REG44: 0x%02X (GPIO配置)", reg_values[7]);
+    }
+
     bool PerformReset() {
         ESP_LOGI(TAG, "执行ES8311电源复位流程");
         
-        // 获取电源控制引脚
         const gpio_num_t vcc_pin = static_cast<gpio_num_t>(AUDIO_CODEC_VCC_CTL);
         
         // 检查当前电源状态
@@ -41,14 +64,29 @@ private:
         // 打开电源
         gpio_set_level(vcc_pin, 1);
         ESP_LOGI(TAG, "ES8311电源打开");
-        vTaskDelay(pdMS_TO_TICKS(300)); // 等待电源稳定
+        vTaskDelay(pdMS_TO_TICKS(300));
         
-        // 再次检查电源状态
-        power_level = gpio_get_level(vcc_pin);
-        if (power_level != 1) {
-            ESP_LOGE(TAG, "ES8311电源控制失败，无法正确上电");
+        // 检查I2C通信是否正常
+        uint8_t chip_id;
+        if (!ReadReg(ES8311_CHIP_ID_REG00, &chip_id)) {
+            ESP_LOGE(TAG, "无法读取ES8311芯片ID，I2C通信可能有问题");
             return false;
         }
+        ESP_LOGI(TAG, "ES8311芯片ID: 0x%02X (期望值: 0xE0)", chip_id);
+        
+        // 打印复位前的寄存器状态
+        ESP_LOGI(TAG, "复位前的寄存器状态:");
+        PrintCodecStatus();
+        
+        // 执行软复位
+        WriteReg(ES8311_RESET_REG00, 0x1F);
+        vTaskDelay(pdMS_TO_TICKS(20));
+        WriteReg(ES8311_RESET_REG00, 0x00);
+        vTaskDelay(pdMS_TO_TICKS(20));
+        
+        // 打印复位后的寄存器状态
+        ESP_LOGI(TAG, "复位后的寄存器状态:");
+        PrintCodecStatus();
         
         ESP_LOGI(TAG, "ES8311复位完成");
         return true;
@@ -73,15 +111,29 @@ public:
         ESP_LOGI(TAG, "SparkBotEs8311AudioCodec创建，执行额外的初始化");
         
         // 先复位一次确保状态正确
-        PerformReset();
+        if (!PerformReset()) {
+            ESP_LOGE(TAG, "ES8311复位失败");
+            return;
+        }
+        
+        // 初始化完成后打印最终状态
+        ESP_LOGI(TAG, "初始化完成后的最终状态:");
+        PrintCodecStatus();
         
         ESP_LOGI(TAG, "SparkBotEs8311AudioCodec初始化完成");
     }
 
     void EnableOutput(bool enable) override {
+        ESP_LOGI(TAG, "正在%s输出...", enable ? "启用" : "禁用");
+        
         if (enable == output_enabled_) {
+            ESP_LOGI(TAG, "输出已经是%s状态，无需改变", enable ? "启用" : "禁用");
             return;
         }
+        
+        // 打印切换前的状态
+        ESP_LOGI(TAG, "切换前的状态:");
+        PrintCodecStatus();
         
         output_enabled_ = enable;
         
@@ -92,6 +144,10 @@ public:
             Es8311AudioCodec::EnableOutput(enable);
             ESP_LOGI(TAG, "SparkBot ES8311输出已禁用");
         }
+        
+        // 打印切换后的状态
+        ESP_LOGI(TAG, "切换后的状态:");
+        PrintCodecStatus();
     }
 };
 

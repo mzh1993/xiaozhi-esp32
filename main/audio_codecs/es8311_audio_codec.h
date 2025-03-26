@@ -35,6 +35,8 @@
 #define ES8311_DAC_REG34               0x34  // DAC控制寄存器3
 #define ES8311_DAC_REG35               0x35  // DAC音量控制
 #define ES8311_DAC_REG37               0x37  // DAC静音控制寄存器
+#define ES8311_CHIP_ID_REG00           0x00  // 芯片ID寄存器
+#define ES8311_GPIO_REG44              0x44  // GPIO配置寄存器
 
 // ES8311工作模式
 enum es8311_mode_t {
@@ -59,14 +61,17 @@ private:
     es8311_mode_t codec_mode_;
     
     // 内部辅助方法
-    bool WriteReg(uint8_t reg_addr, uint8_t data);
-    bool ReadReg(uint8_t reg_addr, uint8_t* data);
     bool InitCodec();
     void CreateDuplexChannels(gpio_num_t mclk, gpio_num_t bclk, gpio_num_t ws, gpio_num_t dout, gpio_num_t din);
 
     // AudioCodec接口实现
     virtual int Read(int16_t* dest, int samples) override;
     virtual int Write(const int16_t* data, int samples) override;
+
+protected:
+    // 寄存器访问方法
+    bool WriteReg(uint8_t reg_addr, uint8_t data);
+    bool ReadReg(uint8_t reg_addr, uint8_t* data);
 
 public:
     Es8311AudioCodec(i2c_master_bus_handle_t i2c_bus_handle, uint8_t i2c_address, int input_sample_rate, int output_sample_rate,

@@ -20,7 +20,7 @@
 #define AUDIO_CODEC_PA_PIN       GPIO_NUM_40  // 功放使能控制引脚
 #define AUDIO_CODEC_I2C_SDA_PIN  GPIO_NUM_2   // I2C数据线
 #define AUDIO_CODEC_I2C_SCL_PIN  GPIO_NUM_1   // I2C时钟线
-#define AUDIO_CODEC_ES8311_ADDR  0x18        // CE引脚接地时的I2C地址
+#define AUDIO_CODEC_ES8311_ADDR  ES8311_CODEC_DEFAULT_ADDR         // CE引脚接地时的I2C地址
 #define AUDIO_PREP_VCC_CTL       GPIO_NUM_6   // 音频模块供电使能端
 
 // LED和按钮配置

@@ -126,3 +126,7 @@ bool Protocol::IsTimeout() const {
     return timeout;
 }
 
+void Protocol::SendMessage(const std::string& text) {
+    SendText(text);
+}
+

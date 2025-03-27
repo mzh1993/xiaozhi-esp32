@@ -6,7 +6,7 @@
 #include "i2c_device.h"
 #include "iot/thing_manager.h"
 #include "assets/lang_config.h"
-
+#include "led/single_led.h"
 #include <esp_log.h>
 #include <driver/i2c_master.h>
 #include <wifi_station.h>
@@ -22,6 +22,14 @@ private:
     i2c_master_bus_handle_t i2c_bus_;
     i2c_master_dev_handle_t i2c_dev_;
     Button boot_button_;
+    Button touch_button_head_;
+    Button touch_button_belly_;
+    Button touch_button_toy_;
+    Button touch_button_face_;
+    Button touch_button_left_hand_;
+    Button touch_button_right_hand_;
+    Button touch_button_left_foot_;
+    Button touch_button_right_foot_;
     bool es8311_detected_ = false;
     
     // 初始化音频电源控制
@@ -104,11 +112,67 @@ private:
     // 初始化按钮
     void InitializeButtons() {
         boot_button_.OnClick([this]() {
+            ESP_LOGI(TAG, "Boot button clicked");
             auto& app = Application::GetInstance();
             if (app.GetDeviceState() == kDeviceStateStarting && !WifiStation::GetInstance().IsConnected()) {
                 ResetWifiConfiguration();
             }
             app.ToggleChatState();
+        });
+
+        // 头部触摸按钮 - 播放音乐
+        touch_button_head_.OnClick([this]() {
+            ESP_LOGI(TAG, "Head button clicked - Playing music");
+            auto& app = Application::GetInstance();
+            app.PlaySound(Lang::Sounds::P3_WELCOME);
+        });
+
+        // 玩具触摸按钮 - 发送消息并等待回应
+        touch_button_toy_.OnClick([this]() {
+            std::string wake_word="我要抢你手上的玩具咯";
+            Application::GetInstance().WakeWordInvoke(wake_word);
+        });
+
+        // 肚子触摸按钮 - 播放笑声
+        touch_button_belly_.OnClick([this]() {
+            ESP_LOGI(TAG, "Belly button clicked - Playing laugh");
+            auto& app = Application::GetInstance();
+            app.PlaySound(Lang::Sounds::P3_WELCOME);
+        });
+
+        // 脸部触摸按钮 - 播放问候语
+        touch_button_face_.OnClick([this]() {
+            ESP_LOGI(TAG, "Face button clicked - Playing greeting");
+            auto& app = Application::GetInstance();
+            app.PlaySound(Lang::Sounds::P3_WELCOME);
+        });
+
+        // 左手触摸按钮 - 播放故事
+        touch_button_left_hand_.OnClick([this]() {
+            ESP_LOGI(TAG, "Left hand button clicked - Playing story");
+            auto& app = Application::GetInstance();
+            app.PlaySound(Lang::Sounds::P3_WELCOME);
+        });
+
+        // 右手触摸按钮 - 播放儿歌
+        touch_button_right_hand_.OnClick([this]() {
+            ESP_LOGI(TAG, "Right hand button clicked - Playing song");
+            auto& app = Application::GetInstance();
+            app.PlaySound(Lang::Sounds::P3_WELCOME);
+        });
+
+        // 左脚触摸按钮 - 播放游戏音效
+        touch_button_left_foot_.OnClick([this]() {
+            ESP_LOGI(TAG, "Left foot button clicked - Playing game sound");
+            auto& app = Application::GetInstance();
+            app.PlaySound(Lang::Sounds::P3_WELCOME);
+        });
+
+        // 右脚触摸按钮 - 播放动物叫声
+        touch_button_right_foot_.OnClick([this]() {
+            ESP_LOGI(TAG, "Right foot button clicked - Playing animal sound");
+            auto& app = Application::GetInstance();
+            app.PlaySound(Lang::Sounds::P3_WELCOME);
         });
     }
 
@@ -119,7 +183,16 @@ private:
     }
 
 public:
-    EspSparkSpotBoard() : boot_button_(BOOT_BUTTON_GPIO) {
+    EspSparkSpotBoard() : 
+        boot_button_(BOOT_BUTTON_GPIO),
+        touch_button_head_(TOUCH_BUTTON_HEAD_GPIO),
+        touch_button_belly_(TOUCH_BUTTON_BELLY_GPIO),
+        touch_button_toy_(TOUCH_BUTTON_TOY_GPIO),
+        touch_button_face_(TOUCH_BUTTON_FACE_GPIO),
+        touch_button_left_hand_(TOUCH_BUTTON_LEFT_HAND_GPIO),
+        touch_button_right_hand_(TOUCH_BUTTON_RIGHT_HAND_GPIO),
+        touch_button_left_foot_(TOUCH_BUTTON_LEFT_FOOT_GPIO),
+        touch_button_right_foot_(TOUCH_BUTTON_RIGHT_FOOT_GPIO) {
         InitializeAudioPower();
         InitializeI2c();
         
@@ -130,6 +203,11 @@ public:
         InitializeIot();
         
         ESP_LOGI(TAG, "EspSparkSpotBoard initialized");
+    }
+
+    virtual Led* GetLed() override {
+        static SingleLed led(BUILTIN_LED_GPIO);
+        return &led;
     }
     
     // 电源控制方法

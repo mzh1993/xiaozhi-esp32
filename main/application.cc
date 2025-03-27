@@ -840,3 +840,30 @@ bool Application::CanEnterSleepMode() {
     // Now it is safe to enter sleep mode
     return true;
 }
+
+void Application::SendText(const std::string& text) {
+    if (!protocol_) {
+        ESP_LOGE(TAG, "Protocol not initialized");
+        return;
+    }
+
+    // 构造符合协议格式的消息
+    cJSON* root = cJSON_CreateObject();
+    cJSON_AddStringToObject(root, "session_id", protocol_->session_id().c_str());
+    cJSON_AddStringToObject(root, "type", "text");
+    cJSON_AddStringToObject(root, "text", text.c_str());
+
+    char* message = cJSON_PrintUnformatted(root);
+    if (message == nullptr) {
+        ESP_LOGE(TAG, "Failed to create JSON message");
+        cJSON_Delete(root);
+        return;
+    }
+
+    ESP_LOGI(TAG, "Sending message to server: %s", message);
+    protocol_->SendMessage(std::string(message));
+    ESP_LOGI(TAG, "Message sent successfully");
+    
+    cJSON_free(message);
+    cJSON_Delete(root);
+}

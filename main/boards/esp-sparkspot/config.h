@@ -21,7 +21,7 @@
 #define AUDIO_CODEC_I2C_SDA_PIN  GPIO_NUM_2   // I2C数据线
 #define AUDIO_CODEC_I2C_SCL_PIN  GPIO_NUM_1   // I2C时钟线
 #define AUDIO_CODEC_ES8311_ADDR  ES8311_CODEC_DEFAULT_ADDR 
-#define AUDIO_PREP_VCC_CTL       GPIO_NUM_6   // 音频模块供电使能端
+
 
 // LED和按钮配置
 #define BUILTIN_LED_GPIO        GPIO_NUM_11
@@ -43,6 +43,7 @@
 #define POWER_KEY_GPIO          GPIO_NUM_12  // KEY按键输入
 #define MCU_VCC_CTL_GPIO       GPIO_NUM_4   // MCU电源控制
 #define VBAT_SAMPLE_GPIO       GPIO_NUM_13  // 电池电压采样
+#define AUDIO_PREP_VCC_CTL       GPIO_NUM_6   // 音频模块供电使能端
 
 // 其他配置
 #define I2C_PORT_NUM I2C_NUM_0

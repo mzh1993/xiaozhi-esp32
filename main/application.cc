@@ -105,6 +105,7 @@ void Application::CheckNewVersion() {
                 wake_word_detect_.StopDetection();
 #endif
                 // 预先关闭音频输出，避免升级过程有音频操作
+                ESP_LOGI(TAG, "Disable the output because of upgrade");
                 auto codec = board.GetAudioCodec();
                 codec->EnableInput(false);
                 codec->EnableOutput(false);
@@ -613,6 +614,7 @@ void Application::OutputAudio() {
         if (device_state_ == kDeviceStateIdle) {
             auto duration = std::chrono::duration_cast<std::chrono::seconds>(now - last_output_time_).count();
             if (duration > max_silence_seconds) {
+                ESP_LOGI(TAG, "Disable the output because of no audio data for a long time");
                 codec->EnableOutput(false);
             }
         }
@@ -866,4 +868,28 @@ void Application::SendText(const std::string& text) {
     
     cJSON_free(message);
     cJSON_Delete(root);
+}
+
+void Application::OnWakeFromSleep() {
+    ESP_LOGI(TAG, "Handling wake from sleep event");
+    
+    // 重置解码器，确保last_output_time_不会导致音频自动关闭
+    ResetDecoder();
+    
+    // 获取并重新初始化音频编解码器
+    auto& board = Board::GetInstance();
+    auto codec = board.GetAudioCodec();
+    
+    if (codec) {
+        codec->EnableInput(true);
+        codec->EnableOutput(true);
+        ESP_LOGI(TAG, "Audio codec re-initialized after wake from sleep");
+    }
+    
+    // 如果设备处于空闲状态，确保状态一致
+    if (device_state_ == kDeviceStateIdle) {
+        auto display = board.GetDisplay();
+        display->SetStatus(Lang::Strings::STANDBY);
+        display->SetEmotion("neutral");
+    }
 }

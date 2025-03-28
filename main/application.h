@@ -71,6 +71,7 @@ public:
     void PlaySound(const std::string_view& sound);
     bool CanEnterSleepMode();
     void SendText(const std::string& text);
+    void OnWakeFromSleep();
 
 private:
     Application();

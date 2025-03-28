@@ -7,6 +7,7 @@
 #include "iot/thing_manager.h"
 #include "assets/lang_config.h"
 #include "led/single_led.h"
+#include "power_save_timer.h"
 #include <esp_log.h>
 #include <driver/i2c_master.h>
 #include <wifi_station.h>
@@ -22,6 +23,7 @@ private:
     i2c_master_bus_handle_t i2c_bus_;
     i2c_master_dev_handle_t i2c_dev_;
     Button boot_button_;
+    Button power_key_;  // 添加电源按键
     Button touch_button_head_;
     Button touch_button_belly_;
     Button touch_button_toy_;
@@ -31,6 +33,7 @@ private:
     Button touch_button_left_foot_;
     Button touch_button_right_foot_;
     bool es8311_detected_ = false;
+    PowerSaveTimer power_save_timer_;  // 添加电源管理定时器
     
     // 初始化音频电源控制
     void InitializeAudioPower() {
@@ -182,9 +185,47 @@ private:
         thing_manager.AddThing(iot::CreateThing("Speaker"));
     }
 
+    // 初始化电源管理
+    void InitializePowerManagement() {
+        // 配置MCU_VCC_CTL为输出
+        gpio_config_t io_conf = {
+            .pin_bit_mask = (1ULL << MCU_VCC_CTL_GPIO),
+            .mode = GPIO_MODE_OUTPUT,
+            .pull_up_en = GPIO_PULLUP_DISABLE,
+            .pull_down_en = GPIO_PULLDOWN_DISABLE,
+            .intr_type = GPIO_INTR_DISABLE
+        };
+        ESP_ERROR_CHECK(gpio_config(&io_conf));
+        
+        // 保持MCU供电
+        ESP_ERROR_CHECK(gpio_set_level(MCU_VCC_CTL_GPIO, 1));
+        ESP_LOGI(TAG, "MCU power enabled");
+
+        // 初始化电源按键
+        power_key_.OnClick([this]() {
+            ESP_LOGI(TAG, "Power key clicked - Wake up from sleep");
+            power_save_timer_.WakeUp();
+        });
+
+        // 配置电源管理回调
+        power_save_timer_.OnEnterSleepMode([this]() {
+            ESP_LOGI(TAG, "Entering sleep mode");
+            SetAudioPower(false);  // 关闭音频电源
+        });
+
+        power_save_timer_.OnExitSleepMode([this]() {
+            ESP_LOGI(TAG, "Exiting sleep mode");
+            SetAudioPower(true);   // 恢复音频电源
+        });
+
+        // 启用电源管理定时器
+        power_save_timer_.SetEnabled(true);
+    }
+
 public:
     EspSparkSpotBoard() : 
         boot_button_(BOOT_BUTTON_GPIO),
+        power_key_(POWER_KEY_GPIO),  // 初始化电源按键
         touch_button_head_(TOUCH_BUTTON_HEAD_GPIO),
         touch_button_belly_(TOUCH_BUTTON_BELLY_GPIO),
         touch_button_toy_(TOUCH_BUTTON_TOY_GPIO),
@@ -192,13 +233,12 @@ public:
         touch_button_left_hand_(TOUCH_BUTTON_LEFT_HAND_GPIO),
         touch_button_right_hand_(TOUCH_BUTTON_RIGHT_HAND_GPIO),
         touch_button_left_foot_(TOUCH_BUTTON_LEFT_FOOT_GPIO),
-        touch_button_right_foot_(TOUCH_BUTTON_RIGHT_FOOT_GPIO) {
+        touch_button_right_foot_(TOUCH_BUTTON_RIGHT_FOOT_GPIO),
+        power_save_timer_(-1, 60, 300) { 
+        
+        InitializePowerManagement();  // 初始化电源管理
         InitializeAudioPower();
         InitializeI2c();
-        
-        // 扫描I2C总线并检测设备
-        I2cDetect();
-        
         InitializeButtons();
         InitializeIot();
         

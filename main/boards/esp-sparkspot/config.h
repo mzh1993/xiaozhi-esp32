@@ -39,6 +39,10 @@
 #define TOUCH_BUTTON_LEFT_FOOT_GPIO  GPIO_NUM_48  // 左脚触摸按键
 #define TOUCH_BUTTON_RIGHT_FOOT_GPIO GPIO_NUM_45  // 右脚触摸按键
 
+// 电源管理配置
+#define POWER_KEY_GPIO          GPIO_NUM_12  // KEY按键输入
+#define MCU_VCC_CTL_GPIO       GPIO_NUM_4   // MCU电源控制
+#define VBAT_SAMPLE_GPIO       GPIO_NUM_13  // 电池电压采样
 
 // 其他配置
 #define I2C_PORT_NUM I2C_NUM_0

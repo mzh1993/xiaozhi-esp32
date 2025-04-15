@@ -1,6 +1,13 @@
-#include "button.h"
+// FreeRTOS headers must come first
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "freertos/queue.h"
 
-#include <esp_log.h>
+// ESP-IDF headers
+#include "esp_log.h"
+
+// Project headers
+#include "button.h"
 
 static const char* TAG = "Button";
 #if CONFIG_SOC_ADC_SUPPORTED

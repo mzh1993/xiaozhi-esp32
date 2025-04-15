@@ -1,10 +1,21 @@
 #ifndef BUTTON_H_
 #define BUTTON_H_
 
-#include <driver/gpio.h>
-#include <iot_button.h>
+// FreeRTOS headers must come first
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "freertos/queue.h"
+
+// ESP-IDF headers
+#include "esp_log.h"
+#include "driver/gpio.h"
+
+// Third-party headers
+#include "iot_button.h"
+#include "touch_button_sensor.h"
+
+// C++ standard headers
 #include <functional>
-#include <touch_button_sensor.h>
 
 // ESP32 触摸传感器通道定义
 #define TOUCH_PAD_GPIO6     1  // TOUCH1 

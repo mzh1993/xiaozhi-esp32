@@ -9,6 +9,8 @@
 #include <string>
 #include <mutex>
 #include <list>
+#include <vector>
+#include <condition_variable>
 
 #include <opus_encoder.h>
 #include <opus_decoder.h>
@@ -25,10 +27,17 @@
 #include "audio_processor.h"
 #endif
 
+<<<<<<< HEAD
 // 事件组中的事件位定义
 #define SCHEDULE_EVENT (1 << 0)           // 主线程调度事件,表示有新任务需要在主线程中执行
 #define AUDIO_INPUT_READY_EVENT (1 << 1)  // 音频输入就绪事件,表示音频输入缓冲区有新数据可读
 #define AUDIO_OUTPUT_READY_EVENT (1 << 2) // 音频输出就绪事件,表示音频输出缓冲区可写入新数据
+=======
+#define SCHEDULE_EVENT (1 << 0)
+#define AUDIO_INPUT_READY_EVENT (1 << 1)
+#define AUDIO_OUTPUT_READY_EVENT (1 << 2)
+#define CHECK_NEW_VERSION_DONE_EVENT (1 << 3)
+>>>>>>> dff8f9cb5bf88080db87a66dbed678b7a1f45701
 
 /**
  * @brief 设备状态枚举
@@ -226,6 +235,7 @@ private:
 #if CONFIG_USE_AUDIO_PROCESSOR
     AudioProcessor audio_processor_;      // 音频处理器
 #endif
+<<<<<<< HEAD
     Ota ota_;                            // OTA升级管理器
     std::mutex mutex_;                   // 互斥锁,用于保护共享资源
     std::list<std::function<void()>> main_tasks_;  // 主线程任务队列
@@ -242,10 +252,38 @@ private:
     BackgroundTask* background_task_ = nullptr;     // 后台任务处理器
     std::chrono::steady_clock::time_point last_output_time_;  // 最后一次音频输出时间
     std::list<std::vector<uint8_t>> audio_decode_queue_;      // 音频解码队列
+=======
+    Ota ota_;
+    std::mutex mutex_;
+    std::list<std::function<void()>> main_tasks_;
+    std::unique_ptr<Protocol> protocol_;
+    EventGroupHandle_t event_group_ = nullptr;
+    esp_timer_handle_t clock_timer_handle_ = nullptr;
+    volatile DeviceState device_state_ = kDeviceStateUnknown;
+    ListeningMode listening_mode_ = kListeningModeAutoStop;
+#if CONFIG_USE_REALTIME_CHAT
+    bool realtime_chat_enabled_ = true;
+#else
+    bool realtime_chat_enabled_ = false;
+#endif
+    bool aborted_ = false;
+    bool voice_detected_ = false;
+    bool busy_decoding_audio_ = false;
+    int clock_ticks_ = 0;
+    TaskHandle_t check_new_version_task_handle_ = nullptr;
+
+    // Audio encode / decode
+    TaskHandle_t audio_loop_task_handle_ = nullptr;
+    BackgroundTask* background_task_ = nullptr;
+    std::chrono::steady_clock::time_point last_output_time_;
+    std::list<std::vector<uint8_t>> audio_decode_queue_;
+    std::condition_variable audio_decode_cv_;
+>>>>>>> dff8f9cb5bf88080db87a66dbed678b7a1f45701
 
     std::unique_ptr<OpusEncoderWrapper> opus_encoder_;    // Opus编码器
     std::unique_ptr<OpusDecoderWrapper> opus_decoder_;    // Opus解码器
 
+<<<<<<< HEAD
     int opus_decode_sample_rate_ = -1;   // Opus解码采样率
     OpusResampler input_resampler_;      // 输入音频重采样器
     OpusResampler reference_resampler_;  // 参考音频重采样器
@@ -294,6 +332,18 @@ private:
      * 
      * 连接服务器检查固件更新，如有新版本则执行升级
      */
+=======
+    OpusResampler input_resampler_;
+    OpusResampler reference_resampler_;
+    OpusResampler output_resampler_;
+
+    void MainEventLoop();
+    void OnAudioInput();
+    void OnAudioOutput();
+    void ReadAudio(std::vector<int16_t>& data, int sample_rate, int samples);
+    void ResetDecoder();
+    void SetDecodeSampleRate(int sample_rate, int frame_duration);
+>>>>>>> dff8f9cb5bf88080db87a66dbed678b7a1f45701
     void CheckNewVersion();
     
     /**
@@ -309,6 +359,8 @@ private:
      * 定期执行任务，如打印调试信息、更新时钟显示等
      */
     void OnClockTimer();
+    void SetListeningMode(ListeningMode mode);
+    void AudioLoop();
 };
 
 #endif // _APPLICATION_H_

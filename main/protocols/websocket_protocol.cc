@@ -34,18 +34,23 @@ void WebsocketProtocol::SendAudio(const std::vector<uint8_t>& data) {
         return;
     }
 
+    busy_sending_audio_ = true;
     websocket_->Send(data.data(), data.size(), true);
+    busy_sending_audio_ = false;
 }
 
-void WebsocketProtocol::SendText(const std::string& text) {
+bool WebsocketProtocol::SendText(const std::string& text) {
     if (websocket_ == nullptr) {
-        return;
+        return false;
     }
 
     if (!websocket_->Send(text)) {
         ESP_LOGE(TAG, "Failed to send text: %s", text.c_str());
         SetError(Lang::Strings::SERVER_ERROR);
+        return false;
     }
+
+    return true;
 }
 
 bool WebsocketProtocol::IsAudioChannelOpened() const {
@@ -65,6 +70,7 @@ bool WebsocketProtocol::OpenAudioChannel() {
         websocket_ = nullptr;
     }
 
+    busy_sending_audio_ = false;
     error_occurred_ = false;
     std::string url = CONFIG_WEBSOCKET_URL;
     std::string token = "Bearer " + std::string(CONFIG_WEBSOCKET_ACCESS_TOKEN);
@@ -156,13 +162,9 @@ bool WebsocketProtocol::OpenAudioChannel() {
     message += "\"audio_params\":{";
     message += "\"format\":\"opus\", \"sample_rate\":16000, \"channels\":1, \"frame_duration\":" + std::to_string(OPUS_FRAME_DURATION_MS);
     message += "}}";
-    
-    if (!websocket_->Send(message)) {
-        ESP_LOGE(TAG, "Failed to send hello message");
-        SetError(Lang::Strings::SERVER_ERROR);
+    if (!SendText(message)) {
         return false;
     }
-    ESP_LOGI(TAG, "Sent hello message, waiting for server response");
 
     // 等待服务器hello响应
     EventBits_t bits = xEventGroupWaitBits(event_group_handle_, WEBSOCKET_PROTOCOL_SERVER_HELLO_EVENT, pdTRUE, pdFALSE, pdMS_TO_TICKS(10000));
@@ -193,6 +195,10 @@ void WebsocketProtocol::ParseServerHello(const cJSON* root) {
         if (sample_rate != NULL) {
             server_sample_rate_ = sample_rate->valueint;
             ESP_LOGI(TAG, "Server sample rate: %d", server_sample_rate_);
+        }
+        auto frame_duration = cJSON_GetObjectItem(audio_params, "frame_duration");
+        if (frame_duration != NULL) {
+            server_frame_duration_ = frame_duration->valueint;
         }
     }
 

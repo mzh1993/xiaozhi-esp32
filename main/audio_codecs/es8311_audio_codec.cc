@@ -176,10 +176,12 @@ void Es8311AudioCodec::CreateDuplexChannels(gpio_num_t mclk, gpio_num_t bclk, gp
     // ESP32-S3作为主设备，提供BCLK和LRCK
     i2s_chan_config_t chan_cfg = {
         .id = I2S_NUM_0,
-        .role = I2S_ROLE_MASTER,  // ESP32-S3作为主设备
-        .dma_desc_num = 6,
-        .dma_frame_num = 240,
-        .auto_clear = true,
+        .role = I2S_ROLE_MASTER,
+        .dma_desc_num = AUDIO_CODEC_DMA_DESC_NUM,
+        .dma_frame_num = AUDIO_CODEC_DMA_FRAME_NUM,
+        .auto_clear_after_cb = true,
+        .auto_clear_before_cb = false,
+        .intr_priority = 0,
     };
     ESP_ERROR_CHECK(i2s_new_channel(&chan_cfg, &tx_handle_, &rx_handle_));
 

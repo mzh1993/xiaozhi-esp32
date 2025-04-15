@@ -15,6 +15,10 @@
 #include <esp_lcd_panel_ops.h>
 #include <esp_lcd_panel_vendor.h>
 
+#ifdef SH1106
+#include <esp_lcd_panel_sh1106.h>
+#endif
+
 #define TAG "CompactWifiBoard"
 
 LV_FONT_DECLARE(font_puhui_14_1);
@@ -77,9 +81,13 @@ private:
         esp_lcd_panel_ssd1306_config_t ssd1306_config = {
             .height = static_cast<uint8_t>(DISPLAY_HEIGHT), // 设置显示高度，这里为DISPLAY_HEIGHT。
         };
-        panel_config.vendor_config = &ssd1306_config; // 设置面板配置，这里为ssd1306_config。
-        // 创建SSD1306面板，并将其句柄存储在panel_中。
+        panel_config.vendor_config = &ssd1306_config;
+
+#ifdef SH1106
+        ESP_ERROR_CHECK(esp_lcd_new_panel_sh1106(panel_io_, &panel_config, &panel_));
+#else
         ESP_ERROR_CHECK(esp_lcd_new_panel_ssd1306(panel_io_, &panel_config, &panel_));
+#endif
         ESP_LOGI(TAG, "SSD1306 driver installed");
 
         // 重置显示面板

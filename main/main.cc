@@ -44,5 +44,4 @@ extern "C" void app_main(void)
     
     // 它创建一个应用程序实例并开始执行
     Application::GetInstance().Start();
-    // The main thread will exit and release the stack memory
 }

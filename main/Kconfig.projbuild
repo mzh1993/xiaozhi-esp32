@@ -51,7 +51,7 @@ config WEBSOCKET_ACCESS_TOKEN
 
 choice BOARD_TYPE
     prompt "Board Type"
-    default BOARD_TYPE_BREAD_COMPACT_WIFI
+    default BOARD_TYPE_ASTRONAUT_TOYS_ESP32S3
     help
         Board type. 开发板类型
     config BOARD_TYPE_BREAD_COMPACT_WIFI
@@ -160,6 +160,8 @@ choice BOARD_TYPE
         bool "SenseCAP Watcher"
     config BOARD_TYPE_DOIT_S3_AIBOX
         bool "四博智联AI陪伴盒子"
+    config BOARD_TYPE_ASTRONAUT_TOYS_ESP32S3
+        bool "太空人玩具"
 endchoice
 
 choice DISPLAY_OLED_TYPE

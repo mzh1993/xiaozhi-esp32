@@ -29,6 +29,7 @@ private:
     Button volume_down_button_;
     Button key1_button_;
     Button key2_button_;
+    bool es8311_detected_ = false;
 
 
     void InitializeCodecI2c() {
@@ -118,7 +119,8 @@ private:
 
     void InitializeIot() {
         auto& thing_manager = iot::ThingManager::GetInstance();
-        thing_manager.AddThing(iot::CreateThing("Speaker")); 
+        thing_manager.AddThing(iot::CreateThing("Speaker"));
+        thing_manager.AddThing(iot::CreateThing("Lamp"));
     }
 
 public:

@@ -45,4 +45,6 @@
 // #define DISPLAY_MIRROR_X true
 // #define DISPLAY_MIRROR_Y true
 
+#define BOARD_NAME "astronaut-toys-esp32s3"
+
 #endif // _BOARD_CONFIG_H_

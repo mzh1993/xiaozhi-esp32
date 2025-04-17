@@ -15,11 +15,17 @@
 #include <driver/i2c_master.h>
 #include "driver/gpio.h"
 #include "driver/spi_master.h"
+#include <esp_lcd_panel_ops.h>
+#include <esp_lcd_panel_vendor.h>
+
+#ifdef SH1106
+#include <esp_lcd_panel_sh1106.h>
+#endif
 
 #define TAG "AstronautToysESP32S3"
 
-// LV_FONT_DECLARE(font_puhui_14_1);
-// LV_FONT_DECLARE(font_awesome_14_1);
+LV_FONT_DECLARE(font_puhui_14_1);
+LV_FONT_DECLARE(font_awesome_14_1);
 
 class AstronautToysESP32S3 : public WifiBoard {
 private:
@@ -29,8 +35,10 @@ private:
     Button volume_down_button_;
     Button key1_button_;
     Button key2_button_;
-    bool es8311_detected_ = false;
-
+    // 添加 OLED 屏幕配置
+    esp_lcd_panel_io_handle_t panel_io_ = nullptr;
+    esp_lcd_panel_handle_t panel_ = nullptr;
+    Display* display_ = nullptr;
 
     void InitializeCodecI2c() {
         i2c_master_bus_config_t i2c_bus_cfg = {
@@ -46,6 +54,58 @@ private:
             },
         };
         ESP_ERROR_CHECK(i2c_new_master_bus(&i2c_bus_cfg, &codec_i2c_bus_));
+    }
+
+    void InitializeSsd1306Display() {
+        // SSD1306 config
+        esp_lcd_panel_io_i2c_config_t io_config = {
+            .dev_addr = 0x3C,
+            .on_color_trans_done = nullptr,
+            .user_ctx = nullptr,
+            .control_phase_bytes = 1,
+            .dc_bit_offset = 6,
+            .lcd_cmd_bits = 8,
+            .lcd_param_bits = 8,
+            .flags = {
+                .dc_low_on_data = 0,
+                .disable_control_phase = 0,
+            },
+            .scl_speed_hz = 400 * 1000,
+        };
+
+        ESP_ERROR_CHECK(esp_lcd_new_panel_io_i2c_v2(codec_i2c_bus_, &io_config, &panel_io_));
+
+        ESP_LOGI(TAG, "Install SSD1306 driver");
+        esp_lcd_panel_dev_config_t panel_config = {};
+        panel_config.reset_gpio_num = -1;
+        panel_config.bits_per_pixel = 1;
+
+        esp_lcd_panel_ssd1306_config_t ssd1306_config = {
+            .height = static_cast<uint8_t>(DISPLAY_HEIGHT),
+        };
+        panel_config.vendor_config = &ssd1306_config;
+
+#ifdef SH1106
+        ESP_ERROR_CHECK(esp_lcd_new_panel_sh1106(panel_io_, &panel_config, &panel_));
+#else
+        ESP_ERROR_CHECK(esp_lcd_new_panel_ssd1306(panel_io_, &panel_config, &panel_));
+#endif
+        ESP_LOGI(TAG, "SSD1306 driver installed");
+
+        // Reset the display
+        ESP_ERROR_CHECK(esp_lcd_panel_reset(panel_));
+        if (esp_lcd_panel_init(panel_) != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to initialize display");
+            display_ = new NoDisplay();
+            return;
+        }
+
+        // Set the display to on
+        ESP_LOGI(TAG, "Turning display on");
+        ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(panel_, true));
+
+        display_ = new OledDisplay(panel_io_, panel_, DISPLAY_WIDTH, DISPLAY_HEIGHT, DISPLAY_MIRROR_X, DISPLAY_MIRROR_Y,
+            {&font_puhui_14_1, &font_awesome_14_1});
     }
 
     void InitializeButtons() {
@@ -131,6 +191,7 @@ public:
     key1_button_(KEY1_BUTTON_GPIO),
     key2_button_(KEY2_BUTTON_GPIO) {  
         InitializeCodecI2c();
+        InitializeSsd1306Display();
         InitializeButtons();
         InitializeIot();
     }
@@ -140,7 +201,6 @@ public:
         return &led_strip;
     }
 
-
     virtual AudioCodec* GetAudioCodec() override {
         static Es8311AudioCodec audio_codec(codec_i2c_bus_, I2C_NUM_0, AUDIO_INPUT_SAMPLE_RATE, AUDIO_OUTPUT_SAMPLE_RATE,
             AUDIO_I2S_GPIO_MCLK, AUDIO_I2S_GPIO_BCLK, AUDIO_I2S_GPIO_WS, AUDIO_I2S_GPIO_DOUT, AUDIO_I2S_GPIO_DIN,
@@ -148,6 +208,9 @@ public:
         return &audio_codec;
     }
 
+    virtual Display* GetDisplay() override {
+        return display_;
+    }
 };
 
 DECLARE_BOARD(AstronautToysESP32S3);

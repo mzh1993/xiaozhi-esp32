@@ -22,6 +22,10 @@
 #include <esp_lcd_panel_sh1106.h>
 #endif
 
+#include "esp_adc/adc_oneshot.h"
+#include "esp_adc/adc_cali.h"
+#include "esp_adc/adc_cali_scheme.h"
+
 #define TAG "AstronautToysESP32S3"
 
 LV_FONT_DECLARE(font_puhui_14_1);
@@ -39,6 +43,10 @@ private:
     esp_lcd_panel_io_handle_t panel_io_ = nullptr;
     esp_lcd_panel_handle_t panel_ = nullptr;
     Display* display_ = nullptr;
+    // 添加电池电量配置
+    adc_oneshot_unit_handle_t adc1_handle_;
+    adc_cali_handle_t adc1_cali_handle_;
+    bool do_calibration_ = false;
 
     void InitializeCodecI2c() {
         i2c_master_bus_config_t i2c_bus_cfg = {
@@ -106,6 +114,36 @@ private:
 
         display_ = new OledDisplay(panel_io_, panel_, DISPLAY_WIDTH, DISPLAY_HEIGHT, DISPLAY_MIRROR_X, DISPLAY_MIRROR_Y,
             {&font_puhui_14_1, &font_awesome_14_1});
+    }
+
+    void InitializeADC() {
+        adc_oneshot_unit_init_cfg_t init_config1 = {
+            .unit_id = ADC_UNIT_1
+        };
+        ESP_ERROR_CHECK(adc_oneshot_new_unit(&init_config1, &adc1_handle_));
+
+        adc_oneshot_chan_cfg_t chan_config = {
+            .atten = ADC_ATTEN,
+            .bitwidth = ADC_WIDTH,
+        };
+        ESP_ERROR_CHECK(adc_oneshot_config_channel(adc1_handle_, VBAT_ADC_CHANNEL, &chan_config));
+
+        adc_cali_handle_t handle = NULL;
+        esp_err_t ret = ESP_FAIL;
+
+#if ADC_CALI_SCHEME_CURVE_FITTING_SUPPORTED
+        adc_cali_curve_fitting_config_t cali_config = {
+            .unit_id = ADC_UNIT_1,
+            .atten = ADC_ATTEN,
+            .bitwidth = ADC_WIDTH,
+        };
+        ret = adc_cali_create_scheme_curve_fitting(&cali_config, &handle);
+        if (ret == ESP_OK) {
+            do_calibration_ = true;
+            adc1_cali_handle_ = handle;
+            ESP_LOGI(TAG, "ADC Curve Fitting calibration succeeded");
+        }
+#endif // ADC_CALI_SCHEME_CURVE_FITTING_SUPPORTED
     }
 
     void InitializeButtons() {
@@ -190,6 +228,7 @@ public:
     volume_down_button_(VOLUME_DOWN_BUTTON_GPIO),
     key1_button_(KEY1_BUTTON_GPIO),
     key2_button_(KEY2_BUTTON_GPIO) {  
+        InitializeADC();
         InitializeCodecI2c();
         InitializeSsd1306Display();
         InitializeButtons();
@@ -210,6 +249,36 @@ public:
 
     virtual Display* GetDisplay() override {
         return display_;
+    }
+
+    virtual bool GetBatteryLevel(int &level, bool &charging, bool &discharging) {
+        if (!adc1_handle_) {
+            InitializeADC();
+        }
+
+        int raw_value = 0;
+        int voltage = 0;
+
+        ESP_ERROR_CHECK(adc_oneshot_read(adc1_handle_, VBAT_ADC_CHANNEL, &raw_value));
+
+        if (do_calibration_) {
+            ESP_ERROR_CHECK(adc_cali_raw_to_voltage(adc1_cali_handle_, raw_value, &voltage));
+            voltage = voltage * 3 / 2; // compensate for voltage divider
+            ESP_LOGI(TAG, "Calibrated voltage: %d mV", voltage);
+        } else {
+            ESP_LOGI(TAG, "Raw ADC value: %d", raw_value);
+            voltage = raw_value;
+        }
+
+        voltage = voltage < EMPTY_BATTERY_VOLTAGE ? EMPTY_BATTERY_VOLTAGE : voltage;
+        voltage = voltage > FULL_BATTERY_VOLTAGE ? FULL_BATTERY_VOLTAGE : voltage;
+
+        // 计算电量百分比
+        level = (voltage - EMPTY_BATTERY_VOLTAGE) * 100 / (FULL_BATTERY_VOLTAGE - EMPTY_BATTERY_VOLTAGE);
+
+        // charging = false;
+        ESP_LOGI(TAG, "Battery Level: %d%%, Charging: %s", level, charging ? "Yes" : "No");
+        return true;
     }
 };
 

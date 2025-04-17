@@ -27,24 +27,24 @@
 #define KEY2_BUTTON_GPIO GPIO_NUM_48
 
 // 添加 OLED 屏幕配置
-// #define DISPLAY_SDA_PIN AUDIO_CODEC_I2C_SDA_PIN
-// #define DISPLAY_SCL_PIN AUDIO_CODEC_I2C_SCL_PIN
-// #define DISPLAY_WIDTH   128
+#define DISPLAY_SDA_PIN AUDIO_CODEC_I2C_SDA_PIN
+#define DISPLAY_SCL_PIN AUDIO_CODEC_I2C_SCL_PIN
+#define DISPLAY_WIDTH   128
 
-// #if CONFIG_OLED_SSD1306_128X32
-// #define DISPLAY_HEIGHT  32
-// #elif CONFIG_OLED_SSD1306_128X64
-// #define DISPLAY_HEIGHT  64
-// #elif CONFIG_OLED_SH1106_128X64
-// #define DISPLAY_HEIGHT  64
-// #define SH1106
-// #else
-// #error "未选择 OLED 屏幕类型"
-// #endif
+#if CONFIG_OLED_SSD1306_128X32
+#define DISPLAY_HEIGHT  32
+#elif CONFIG_OLED_SSD1306_128X64
+#define DISPLAY_HEIGHT  64
+#elif CONFIG_OLED_SH1106_128X64
+#define DISPLAY_HEIGHT  64
+#define SH1106
+#else
+#error "未选择 OLED 屏幕类型"
+#endif
 
-// #define DISPLAY_MIRROR_X true
-// #define DISPLAY_MIRROR_Y true
+#define DISPLAY_MIRROR_X true
+#define DISPLAY_MIRROR_Y true
 
-#define BOARD_NAME "astronaut-toys-esp32s3"
+// #define BOARD_NAME "astronaut-toys-esp32s3"
 
 #endif // _BOARD_CONFIG_H_

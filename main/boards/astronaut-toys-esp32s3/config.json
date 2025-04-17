@@ -4,8 +4,7 @@
         {
             "name": "astronaut-toys-esp32s3",
             "sdkconfig_append": [
-                "CONFIG_OLED_SSD1306_128X32=y",
-                "CONFIG_USE_WAKE_WORD_DETECT=y"
+                "CONFIG_OLED_SSD1306_128X32=y"
             ]
         }
     ]

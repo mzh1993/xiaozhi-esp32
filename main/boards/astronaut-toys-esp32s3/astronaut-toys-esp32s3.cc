@@ -5,6 +5,7 @@
 #include "application.h"
 #include "button.h"
 #include "config.h"
+#include "power_save_timer.h"
 #include "iot/thing_manager.h"
 #include "led/single_led.h"
 #include "assets/lang_config.h"
@@ -17,6 +18,7 @@
 #include "driver/spi_master.h"
 #include <esp_lcd_panel_ops.h>
 #include <esp_lcd_panel_vendor.h>
+#include <esp_heap_caps.h>
 
 #ifdef SH1106
 #include <esp_lcd_panel_sh1106.h>
@@ -25,6 +27,8 @@
 #include "esp_adc/adc_oneshot.h"
 #include "esp_adc/adc_cali.h"
 #include "esp_adc/adc_cali_scheme.h"
+
+#include <esp_timer.h>
 
 #define TAG "AstronautToysESP32S3"
 
@@ -47,6 +51,81 @@ private:
     adc_oneshot_unit_handle_t adc1_handle_;
     adc_cali_handle_t adc1_cali_handle_;
     bool do_calibration_ = false;
+    // 添加电源管理配置
+    PowerSaveTimer* power_save_timer_;
+    
+    // 内存监控定时器
+    esp_timer_handle_t memory_monitor_timer_ = nullptr;
+    
+    // 添加电池状态缓存
+    int cached_battery_level_ = 0;
+    bool cached_battery_charging_ = false;
+    bool cached_battery_discharging_ = false;
+    int64_t last_battery_read_time_ = 0;
+    static const int64_t BATTERY_READ_INTERVAL_MS = 60000; // 60秒更新一次
+
+    void InitializeMemoryMonitor() {
+        esp_timer_create_args_t timer_args = {
+            .callback = [](void* arg) {
+                // 内部内存统计
+                size_t free_internal = heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+                size_t min_free_internal = heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+                
+                // 外部内存统计 (SPIRAM)
+                size_t free_spiram = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
+                size_t min_free_spiram = heap_caps_get_minimum_free_size(MALLOC_CAP_SPIRAM);
+                
+                // 总内存统计
+                size_t free_total = heap_caps_get_free_size(MALLOC_CAP_8BIT);
+                size_t min_free_total = heap_caps_get_minimum_free_size(MALLOC_CAP_8BIT);
+                
+                ESP_LOGI(TAG, "--- 内存统计 ---");
+                ESP_LOGI(TAG, "内部RAM: 当前空闲 %u 字节, 最小空闲 %u 字节", free_internal, min_free_internal);
+                ESP_LOGI(TAG, "外部RAM: 当前空闲 %u 字节, 最小空闲 %u 字节", free_spiram, min_free_spiram);
+                ESP_LOGI(TAG, "总计RAM: 当前空闲 %u 字节, 最小空闲 %u 字节", free_total, min_free_total);
+                
+                // 检查内存是否严重不足
+                if (min_free_internal < 10000) {  // 如果最小空闲内存低于10KB
+                    ESP_LOGW(TAG, "警告: 内部RAM严重不足!");
+                }
+            },
+            .arg = nullptr,
+            .dispatch_method = ESP_TIMER_TASK,
+            .name = "memory_monitor",
+            .skip_unhandled_events = true,
+        };
+        
+        ESP_ERROR_CHECK(esp_timer_create(&timer_args, &memory_monitor_timer_));
+        // 每10秒检查一次内存状态
+        ESP_ERROR_CHECK(esp_timer_start_periodic(memory_monitor_timer_, 10 * 1000 * 1000));
+        ESP_LOGI(TAG, "Memory monitor started");
+    }
+
+    void InitializePowerSaveTimer() {
+        power_save_timer_ = new PowerSaveTimer(-1, 60, 180);
+        power_save_timer_->OnEnterSleepMode([this]() {
+            ESP_LOGI(TAG, "Enabling sleep mode");
+            auto display = GetDisplay();
+            display->SetChatMessage("system", "");
+            display->SetEmotion("sleepy");
+            
+            auto codec = GetAudioCodec();
+            codec->EnableInput(false);
+            // 停止唤醒词检测
+            // Application::GetInstance().StopWakeWordDetection();
+        });
+        power_save_timer_->OnExitSleepMode([this]() {
+            auto codec = GetAudioCodec();
+            codec->EnableInput(true);
+            
+            auto display = GetDisplay();
+            display->SetChatMessage("system", "");
+            display->SetEmotion("neutral");
+            // 重新启动唤醒词检测
+            // Application::GetInstance().StartWakeWordDetection();
+        });
+        power_save_timer_->SetEnabled(true);
+    }
 
     void InitializeCodecI2c() {
         i2c_master_bus_config_t i2c_bus_cfg = {
@@ -148,6 +227,7 @@ private:
 
     void InitializeButtons() {
         boot_button_.OnClick([this]() {
+            power_save_timer_->WakeUp();
             auto& app = Application::GetInstance();
             if (app.GetDeviceState() == kDeviceStateStarting && !WifiStation::GetInstance().IsConnected()) {
                 ResetWifiConfiguration();
@@ -162,15 +242,15 @@ private:
                 volume = 100;
             }
             codec->SetOutputVolume(volume);
-            // if (display_) {
-            //     display_->ShowNotification(Lang::Strings::VOLUME + std::to_string(volume));
-            // }
+            if (display_) {
+                display_->ShowNotification(Lang::Strings::VOLUME + std::to_string(volume));
+            }
         });
         volume_up_button_.OnLongPress([this]() {
             GetAudioCodec()->SetOutputVolume(100);
-            // if (display_) {
-            //      display_->ShowNotification(Lang::Strings::MAX_VOLUME);
-            // }
+            if (display_) {
+                 display_->ShowNotification(Lang::Strings::MAX_VOLUME);
+            }
         });
 
         volume_down_button_.OnClick([this]() {
@@ -180,15 +260,15 @@ private:
                 volume = 0;
             }
             codec->SetOutputVolume(volume);
-            // if (display_) {
-            //      display_->ShowNotification(Lang::Strings::VOLUME + std::to_string(volume));
-            // }
+            if (display_) {
+                 display_->ShowNotification(Lang::Strings::VOLUME + std::to_string(volume));
+            }
         });
         volume_down_button_.OnLongPress([this]() {
             GetAudioCodec()->SetOutputVolume(0);
-            // if (display_) {
-            //      display_->ShowNotification(Lang::Strings::MUTED);
-            // }
+            if (display_) {
+                 display_->ShowNotification(Lang::Strings::MUTED);
+            }
         });
 
         // // KEY1 按钮
@@ -232,7 +312,16 @@ public:
         InitializeCodecI2c();
         InitializeSsd1306Display();
         InitializeButtons();
+        InitializePowerSaveTimer();
+        InitializeMemoryMonitor();  // 初始化内存监控
         InitializeIot();
+    }
+
+    ~AstronautToysESP32S3() {
+        if (memory_monitor_timer_) {
+            esp_timer_stop(memory_monitor_timer_);
+            esp_timer_delete(memory_monitor_timer_);
+        }
     }
 
     virtual Led* GetLed() override {
@@ -252,6 +341,16 @@ public:
     }
 
     virtual bool GetBatteryLevel(int &level, bool &charging, bool &discharging) {
+        int64_t current_time = esp_timer_get_time() / 1000; // 转换为毫秒
+        
+        // 仅当不是首次调用且距离上次读取不到30秒，才返回缓存值
+        if (last_battery_read_time_ > 0 && current_time - last_battery_read_time_ < BATTERY_READ_INTERVAL_MS) {
+            level = cached_battery_level_;
+            charging = cached_battery_charging_;
+            discharging = cached_battery_discharging_;
+            return true;
+        }
+        
         if (!adc1_handle_) {
             InitializeADC();
         }
@@ -278,8 +377,16 @@ public:
 
         // charging = false;
         ESP_LOGI(TAG, "Battery Level: %d%%, Charging: %s", level, charging ? "Yes" : "No");
+        
+        // 更新缓存和时间戳
+        cached_battery_level_ = level;
+        cached_battery_charging_ = charging;
+        cached_battery_discharging_ = discharging;
+        last_battery_read_time_ = current_time;
+        
         return true;
     }
+
 };
 
 DECLARE_BOARD(AstronautToysESP32S3);

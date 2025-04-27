@@ -313,7 +313,7 @@ public:
         InitializeSsd1306Display();
         InitializeButtons();
         InitializePowerSaveTimer();
-        InitializeMemoryMonitor();  // 初始化内存监控
+        // InitializeMemoryMonitor();  // 初始化内存监控
         InitializeIot();
     }
 

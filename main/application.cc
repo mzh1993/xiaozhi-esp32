@@ -30,9 +30,43 @@
 #include <cJSON.h>
 #include <driver/gpio.h>
 #include <arpa/inet.h>
+#include <regex>
 
 #define TAG "Application"
 
+// 添加音乐播放相关的处理
+
+// 判断文本是否包含播放音乐的指令
+static bool IsPlayMusicCommand(const std::string& text) {
+    // 使用简单的字符串匹配
+    return (text.find("播放音乐") != std::string::npos || 
+            text.find("听歌") != std::string::npos ||
+            text.find("放首歌") != std::string::npos ||
+            text.find("放音乐") != std::string::npos);
+}
+
+// 从播放指令中提取歌曲名
+static std::string ExtractSongName(const std::string& text) {
+    // 使用正则表达式提取歌曲名
+    std::regex patterns[] = {
+        std::regex("播放音乐(.+?)(?:$|[,，。！？!?])"),
+        std::regex("播放(.+?)(?:$|[,，。！？!?])"),
+        std::regex("来首(.+?)(?:$|[,，。！？!?])"),
+        std::regex("听(.+?)(?:$|[,，。！？!?])"),
+        std::regex("放首(.+?)(?:$|[,，。！？!?])"),
+        std::regex("放(.+?)(?:$|[,，。！？!?])")
+    };
+    
+    for (const auto& pattern : patterns) {
+        std::smatch match;
+        if (std::regex_search(text, match, pattern) && match.size() > 1) {
+            return match[1].str();
+        }
+    }
+    
+    // 如果没有匹配到具体歌曲名，返回默认值
+    return "";
+}
 
 static const char* const STATE_STRINGS[] = {
     "unknown",

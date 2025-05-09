@@ -15,7 +15,9 @@
 #include <AudioFileSourceBuffer.h>
 #include <AudioGeneratorMP3.h>
 #include <AudioOutput.h>
-
+// #include "AudioFileSourceSPIFFS.h"
+// #include "AudioGeneratorMP3.h"
+// #include "AudioOutputI2SNoDAC.h"
 #define TAG "MusicPlayer"
 
 // 缓冲区大小 (32KB)

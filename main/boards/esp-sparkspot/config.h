@@ -41,9 +41,14 @@
 
 // 电源管理配置
 #define POWER_KEY_GPIO          GPIO_NUM_12  // KEY按键输入
-#define MCU_VCC_CTL_GPIO       GPIO_NUM_4   // MCU电源控制
-#define VBAT_SAMPLE_GPIO       GPIO_NUM_13  // 电池电压采样
-#define AUDIO_PREP_VCC_CTL       GPIO_NUM_6   // 音频模块供电使能端
+#define MCU_VCC_CTL_GPIO        GPIO_NUM_4   // MCU电源控制
+#define PERP_VCC_CTL             GPIO_NUM_6     // set 1 to power on peripherals
+#define AUDIO_PREP_VCC_CTL      GPIO_NUM_6   // 音频模块供电使能端
+
+#define ADC_ATTEN                ADC_ATTEN_DB_12
+#define ADC_WIDTH                ADC_BITWIDTH_DEFAULT
+#define FULL_BATTERY_VOLTAGE     4100
+#define EMPTY_BATTERY_VOLTAGE    3200
 
 // 其他配置
 #define I2C_PORT_NUM I2C_NUM_0

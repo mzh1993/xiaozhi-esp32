@@ -14,14 +14,19 @@
 #define AUDIO_I2S_GPIO_DIN       GPIO_NUM_15
 #define AUDIO_I2S_GPIO_DOUT      GPIO_NUM_18
 
+#define I2C_MASTER_SDA_PIN       GPIO_NUM_2
+#define I2C_MASTER_SCL_PIN       GPIO_NUM_1
+
 #define AUDIO_CODEC_PA_PIN       GPIO_NUM_40
-#define AUDIO_CODEC_I2C_SDA_PIN  GPIO_NUM_2
-#define AUDIO_CODEC_I2C_SCL_PIN  GPIO_NUM_1
 #define AUDIO_CODEC_ES8311_ADDR  ES8311_CODEC_DEFAULT_ADDR
 
 #define BOOT_BUTTON_GPIO         GPIO_NUM_0
 #define KEY_BUTTON_GPIO          GPIO_NUM_12
 #define LED_PIN                  GPIO_NUM_11
+
+// 定义I2C主频
+#define I2C_MASTER_FREQ_HZ      (100 * 1000)
+#define I2C_INT_IO               GPIO_NUM_5
 
 #define VBAT_ADC_CHANNEL         ADC_CHANNEL_9  // S3: IO10
 #define MCU_VCC_CTL              GPIO_NUM_4     // set 1 to power on MCU

@@ -21,6 +21,8 @@
 #include "bmi270.h"
 #include "common/common.h"
 
+#define TAG "esp_spot_s3" // 定义日志标签
+
 extern "C" void bmi2_error_codes_print_result(int8_t rslt);
 
 int8_t set_feature_config(struct bmi2_dev *dev) {
@@ -28,36 +30,46 @@ int8_t set_feature_config(struct bmi2_dev *dev) {
     struct bmi2_int_pin_config pin_config = { 0 };
     int8_t rslt;
 
+    // 1. Configure Any Motion parameters
     config.type = BMI2_ANY_MOTION;
     rslt = bmi270_get_sensor_config(&config, 1, dev);
-    bmi2_error_codes_print_result(rslt);
-    if (rslt != BMI2_OK) return rslt;
+    if (rslt != BMI2_OK) {
+        ESP_LOGE(TAG, "Failed to get Any Motion config: %d", rslt);
+        return rslt;
+    }
 
-    rslt = bmi2_get_int_pin_config(&pin_config, dev);
-    bmi2_error_codes_print_result(rslt);
-    if (rslt != BMI2_OK) return rslt;
-
-    // Configure Any Motion parameters
+    // Set Any Motion parameters
     config.cfg.any_motion.duration = 0x04;  // 80ms
     config.cfg.any_motion.threshold = 0x68; // 50mg
 
     rslt = bmi270_set_sensor_config(&config, 1, dev);
-    bmi2_error_codes_print_result(rslt);
-    if (rslt != BMI2_OK) return rslt;
+    if (rslt != BMI2_OK) {
+        ESP_LOGE(TAG, "Failed to set Any Motion config: %d", rslt);
+        return rslt;
+    }
 
-    // Configure interrupt pin
+    // 2. Configure interrupt pin
+    rslt = bmi2_get_int_pin_config(&pin_config, dev);
+    if (rslt != BMI2_OK) {
+        ESP_LOGE(TAG, "Failed to get interrupt pin config: %d", rslt);
+        return rslt;
+    }
+
     pin_config.pin_type = BMI2_INT1;
     pin_config.pin_cfg[0].output_en = BMI2_INT_OUTPUT_ENABLE;
     pin_config.pin_cfg[0].lvl = BMI2_INT_ACTIVE_LOW;
     pin_config.pin_cfg[0].od = BMI2_INT_PUSH_PULL;
-    rslt = bmi2_set_int_pin_config(&pin_config, dev);
-    bmi2_error_codes_print_result(rslt);
-    if (rslt != BMI2_OK) return rslt;
+    pin_config.int_latch = BMI2_INT_NON_LATCH;
 
+    rslt = bmi2_set_int_pin_config(&pin_config, dev);
+    if (rslt != BMI2_OK) {
+        ESP_LOGE(TAG, "Failed to set interrupt pin config: %d", rslt);
+        return rslt;
+    }
+
+    ESP_LOGI(TAG, "Any Motion feature configured successfully");
     return BMI2_OK;
 }
-
-#define TAG "esp_spot_s3" // 定义日志标签
 
 bool button_released_ = false; // 按钮释放标志
 bool shutdown_ready_ = false; // 关机准备标志
@@ -101,37 +113,39 @@ private:
         uint16_t int_status = 0;
         int8_t rslt;
 
-        ESP_LOGI(TAG, "AnyMotionEventHandlerTask started. Waiting for motion...");
+        ESP_LOGI(TAG, "Any Motion event handler task started");
 
         while (true) {
             if (xSemaphoreTake(self->any_motion_semaphore_, portMAX_DELAY) == pdTRUE) {
-                ESP_LOGI(TAG, "GPIO interrupt received for Any Motion.");
+                ESP_LOGD(TAG, "GPIO interrupt received for Any Motion");
+                
                 rslt = bmi2_get_int_status(&int_status, bmi_dev);
                 if (rslt != BMI2_OK) {
-                    ESP_LOGE(TAG, "Failed to get BMI270 interrupt status: %d", rslt);
-                    bmi2_error_codes_print_result(rslt);
+                    ESP_LOGE(TAG, "Failed to get interrupt status: %d", rslt);
                     vTaskDelay(pdMS_TO_TICKS(100));
                     continue;
                 }
 
                 if (int_status & BMI270_ANY_MOT_STATUS_MASK) {
-                    ESP_LOGI(TAG, ">>> Any-motion event detected! Interrupt Status: 0x%04X", int_status);
+                    ESP_LOGI(TAG, "Any Motion detected! Status: 0x%04X", int_status);
+                    // TODO: Add your Any Motion event handling logic here
                 } else {
-                    ESP_LOGW(TAG, "GPIO interrupt received, but Any Motion status bit not set. Int_status: 0x%04X", int_status);
+                    ESP_LOGW(TAG, "Unexpected interrupt status: 0x%04X", int_status);
                 }
             }
         }
     }
 
-    int8_t bmi270_enable_any_motion_feature() {
+    int8_t bmi270_enable_any_motion() {
         struct bmi2_dev *bmi_dev = this->bmi_handle_;
         int8_t rslt = BMI2_OK;
 
         if (!bmi_dev) {
-            ESP_LOGE(TAG, "BMI2 device handle (this->bmi_handle_) is NULL!");
+            ESP_LOGE(TAG, "BMI2 device handle is NULL!");
             return BMI2_E_NULL_PTR;
         }
 
+        // 1. Create semaphore for interrupt handling
         if (this->any_motion_semaphore_ == NULL) {
             this->any_motion_semaphore_ = xSemaphoreCreateBinary();
             if (this->any_motion_semaphore_ == NULL) {
@@ -142,58 +156,75 @@ private:
             xSemaphoreTake(this->any_motion_semaphore_, 0);
         }
 
+        // 2. Configure GPIO interrupt
         gpio_config_t io_conf = {};
         io_conf.intr_type = GPIO_INTR_ANYEDGE;
         io_conf.pin_bit_mask = (1ULL << I2C_INT_IO);
         io_conf.mode = GPIO_MODE_INPUT;
         io_conf.pull_down_en = GPIO_PULLDOWN_ENABLE;
         io_conf.pull_up_en = GPIO_PULLUP_DISABLE;
-        ESP_ERROR_CHECK(gpio_config(&io_conf));
+        
+        esp_err_t gpio_ret = gpio_config(&io_conf);
+        if (gpio_ret != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to configure GPIO: %s", esp_err_to_name(gpio_ret));
+            vSemaphoreDelete(this->any_motion_semaphore_);
+            this->any_motion_semaphore_ = NULL;
+            return BMI2_E_COM_FAIL;
+        }
 
+        // 3. Install GPIO ISR service if not already installed
         if (!this->any_motion_isr_service_installed_) {
             esp_err_t gpio_isr_ret = gpio_install_isr_service(ESP_INTR_FLAG_LEVEL1);
             if (gpio_isr_ret == ESP_OK) {
                 this->any_motion_isr_service_installed_ = true;
             } else if (gpio_isr_ret == ESP_ERR_INVALID_STATE) {
-                ESP_LOGW(TAG, "GPIO ISR service already installed.");
+                ESP_LOGW(TAG, "GPIO ISR service already installed");
                 this->any_motion_isr_service_installed_ = true;
             } else {
                 ESP_LOGE(TAG, "Failed to install GPIO ISR service: %s", esp_err_to_name(gpio_isr_ret));
+                vSemaphoreDelete(this->any_motion_semaphore_);
+                this->any_motion_semaphore_ = NULL;
                 return BMI2_E_COM_FAIL;
             }
         }
 
+        // 4. Add GPIO ISR handler
         gpio_isr_handler_remove(I2C_INT_IO);
         esp_err_t add_isr_ret = gpio_isr_handler_add(I2C_INT_IO, EspSpotS3Bot::class_gpio_isr_edge_handler, (void*)this->any_motion_semaphore_);
         if (add_isr_ret != ESP_OK) {
             ESP_LOGE(TAG, "Failed to add GPIO ISR handler: %s", esp_err_to_name(add_isr_ret));
-            if (this->any_motion_semaphore_ != NULL) {
-                vSemaphoreDelete(this->any_motion_semaphore_);
-                this->any_motion_semaphore_ = NULL;
-            }
+            vSemaphoreDelete(this->any_motion_semaphore_);
+            this->any_motion_semaphore_ = NULL;
             return BMI2_E_COM_FAIL;
         }
 
+        // 5. Enable sensors
         uint8_t sens_list[2] = { BMI2_ACCEL, BMI2_ANY_MOTION };
         rslt = bmi2_sensor_enable(sens_list, 2, bmi_dev);
         if (rslt != BMI2_OK) {
-            ESP_LOGE(TAG, "bmi2_sensor_enable for Any Motion failed.");
+            ESP_LOGE(TAG, "Failed to enable sensors: %d", rslt);
             return rslt;
         }
 
+        // 6. Configure Any Motion feature
         rslt = set_feature_config(bmi_dev);
         if (rslt != BMI2_OK) {
-            ESP_LOGE(TAG, "set_feature_config for Any Motion failed.");
+            ESP_LOGE(TAG, "Failed to configure Any Motion feature: %d", rslt);
             return rslt;
         }
 
-        struct bmi2_sens_int_config sens_int_cfg = { .type = BMI2_ANY_MOTION, .hw_int_pin = BMI2_INT1 };
+        // 7. Map Any Motion interrupt to INT1
+        struct bmi2_sens_int_config sens_int_cfg = { 
+            .type = BMI2_ANY_MOTION, 
+            .hw_int_pin = BMI2_INT1 
+        };
         rslt = bmi2_map_feat_int(sens_int_cfg.type, sens_int_cfg.hw_int_pin, bmi_dev);
         if (rslt != BMI2_OK) {
-            ESP_LOGE(TAG, "bmi2_map_feat_int for Any Motion failed.");
+            ESP_LOGE(TAG, "Failed to map Any Motion interrupt: %d", rslt);
             return rslt;
         }
 
+        // 8. Create task for handling Any Motion events
         if (this->any_motion_task_handle_ == NULL) {
             BaseType_t task_created = xTaskCreate(
                 EspSpotS3Bot::any_motion_event_handler_task_impl,
@@ -204,21 +235,17 @@ private:
                 &this->any_motion_task_handle_
             );
             if (task_created != pdPASS) {
-                ESP_LOGE(TAG, "Failed to create any_motion_task. Error code: %d", task_created);
+                ESP_LOGE(TAG, "Failed to create any_motion_task");
                 this->any_motion_task_handle_ = NULL;
-                if (this->any_motion_semaphore_ != NULL) {
-                    vSemaphoreDelete(this->any_motion_semaphore_);
-                    this->any_motion_semaphore_ = NULL;
-                }
+                vSemaphoreDelete(this->any_motion_semaphore_);
+                this->any_motion_semaphore_ = NULL;
                 return BMI2_E_COM_FAIL;
-            } else {
-                ESP_LOGI(TAG, "any_motion_task created successfully.");
             }
-        } else {
-            ESP_LOGW(TAG, "any_motion_task already running or previously created.");
+            ESP_LOGI(TAG, "Any Motion task created successfully");
         }
 
-        return rslt;
+        ESP_LOGI(TAG, "Any Motion detection enabled successfully");
+        return BMI2_OK;
     }
     
     int8_t set_accel_gyro_config(struct bmi2_dev *dev) {
@@ -689,17 +716,9 @@ public:
         InitializeI2c();
         InitializeButtons();
         InitializeIot();
-        bmi270_enable_wrist_gesture();
-        bmi270_enable_accel_gyro();
-
-        // if (this->bmi_handle_) {
-        //     int8_t any_motion_rslt = this->bmi270_enable_any_motion_feature(); 
-        //     if (any_motion_rslt != BMI2_OK) {
-        //         ESP_LOGE(TAG, "Failed to enable Any Motion feature: %d", any_motion_rslt);
-        //     }
-        // } else {
-        //     ESP_LOGE(TAG, "bmi_handle_ is NULL, cannot enable Any Motion.");
-        // }
+        // bmi270_enable_wrist_gesture();
+        // bmi270_enable_accel_gyro();
+        bmi270_enable_any_motion();
     }
 
     virtual Led* GetLed() override {

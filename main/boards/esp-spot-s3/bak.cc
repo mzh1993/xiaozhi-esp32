@@ -1,61 +1,61 @@
-#include "wifi_board.h"
-#include "audio_codecs/es8311_audio_codec.h"
-#include "application.h"
-#include "button.h"
-#include "config.h"
-#include "iot/thing_manager.h"
-#include "sdkconfig.h"
+#include "wifi_board.h" // 包含 WiFi 板的头文件
+#include "audio_codecs/es8311_audio_codec.h" // 包含 ES8311 音频编解码器的头文件
+#include "application.h" // 包含应用程序的头文件
+#include "button.h" // 包含按钮的头文件
+#include "config.h" // 包含配置的头文件
+#include "iot/thing_manager.h" // 包含 IoT 设备管理器的头文件
+#include "sdkconfig.h" // 包含 SDK 配置的头文件
 #include <string.h>
+
 #include "driver/gpio.h"
 #include "freertos/task.h"
-#include <wifi_station.h>
-#include <esp_log.h>
-#include <driver/i2c_master.h>
-#include <driver/spi_common.h>
-#include "esp_adc/adc_oneshot.h"
-#include "esp_adc/adc_cali.h"
-#include "esp_adc/adc_cali_scheme.h"
-#include "driver/gpio.h"
-#include "esp_timer.h"
-#include "led/circular_strip.h"
-#include "bmi270.h"
+#include <wifi_station.h> // 包含 WiFi 站点的头文件
+#include <esp_log.h> // 包含 ESP 日志的头文件
+#include <driver/i2c_master.h> // 包含 I2C 主机驱动的头文件
+#include <driver/spi_common.h> // 包含 SPI 公共驱动的头文件
+#include "esp_adc/adc_oneshot.h" // 包含 ESP ADC 单次采样驱动的头文件
+#include "esp_adc/adc_cali.h" // 包含 ESP ADC 校准的头文件
+#include "esp_adc/adc_cali_scheme.h" // 包含 ESP ADC 校准方案的头文件
+
+#include <driver/gpio.h> // 包含 GPIO 驱动的头文件
+#include "esp_timer.h" // 包含 ESP 定时器的头文件
+#include "led/circular_strip.h" // 包含环形 LED 条的头文件
+
+// #include "bmi270Imu.h" 
+#include "bmi270.h"       
 #include "common/common.h"
 
-extern "C" void bmi2_error_codes_print_result(int8_t rslt);
+///
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
+#include "bmi2.h"
+#include "bmi270.h" // Assuming this contains BMI270_ANY_MOT_STATUS_MASK and other helpers
 
-int8_t set_feature_config(struct bmi2_dev *dev) {
-    struct bmi2_sens_config config;
-    struct bmi2_int_pin_config pin_config = { 0 };
-    int8_t rslt;
+// Helper function (from original) - ensure this is defined elsewhere
+extern void bmi2_error_codes_print_result(int8_t rslt);
+// Placeholder for the actual feature configuration (from original)
+// This function is critical and needs to set any-motion parameters (threshold, duration)
+extern int8_t set_feature_config(struct bmi2_dev *dev);
+static const char *TAG = "ANY_MOTION"; // Logging Tag
 
-    config.type = BMI2_ANY_MOTION;
-    rslt = bmi270_get_sensor_config(&config, 1, dev);
-    bmi2_error_codes_print_result(rslt);
-    if (rslt != BMI2_OK) return rslt;
+// --- Globals for ISR and Task communication ---
+static SemaphoreHandle_t s_any_motion_semaphore = NULL;
 
-    rslt = bmi2_get_int_pin_config(&pin_config, dev);
-    bmi2_error_codes_print_result(rslt);
-    if (rslt != BMI2_OK) return rslt;
+// --- Forward declaration for the task ---
+static void any_motion_event_handler_task(void *pvParameters);
 
-    // Configure Any Motion parameters
-    config.cfg.any_motion.duration = 0x04;  // 80ms
-    config.cfg.any_motion.threshold = 0x68; // 50mg
-
-    rslt = bmi270_set_sensor_config(&config, 1, dev);
-    bmi2_error_codes_print_result(rslt);
-    if (rslt != BMI2_OK) return rslt;
-
-    // Configure interrupt pin
-    pin_config.pin_type = BMI2_INT1;
-    pin_config.pin_cfg[0].output_en = BMI2_INT_OUTPUT_ENABLE;
-    pin_config.pin_cfg[0].lvl = BMI2_INT_ACTIVE_LOW;
-    pin_config.pin_cfg[0].od = BMI2_INT_PUSH_PULL;
-    rslt = bmi2_set_int_pin_config(&pin_config, dev);
-    bmi2_error_codes_print_result(rslt);
-    if (rslt != BMI2_OK) return rslt;
-
-    return BMI2_OK;
+// --- ISR Handler ---
+static void IRAM_ATTR gpio_isr_edge_handler_anymotion(void* arg)
+{
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+    if (s_any_motion_semaphore != NULL) {
+        xSemaphoreGiveFromISR(s_any_motion_semaphore, &xHigherPriorityTaskWoken);
+    }
+    if (xHigherPriorityTaskWoken) {
+        portYIELD_FROM_ISR();
+    }
 }
+///
 
 #define TAG "esp_spot_s3" // 定义日志标签
 
@@ -63,11 +63,13 @@ bool button_released_ = false; // 按钮释放标志
 bool shutdown_ready_ = false; // 关机准备标志
 esp_timer_handle_t shutdown_timer; // 关机定时器句柄
 
-class EspSpotS3Bot : public WifiBoard {
+class EspSpotS3Bot : public WifiBoard { // 定义 EspSpotS3Bot 类，继承自 WifiBoard
 private:
-    i2c_master_bus_handle_t i2c_bus_;// I2C 总线句柄
-    i2c_bus_handle_t lowlevel_i2c_bus_ = nullptr; // —— 新增：底层 I2C，用于 bmi270 ——  
-    bmi270_handle_t bmi_handle_ = nullptr; // BMI270 句柄
+    i2c_master_bus_handle_t i2c_bus_; // I2C 总线句柄
+    // —— 新增：底层 I2C，用于 bmi270 ——  
+    i2c_bus_handle_t lowlevel_i2c_bus_ = nullptr;
+    // BMI270 句柄
+    bmi270_handle_t bmi_handle_ = nullptr;
     Button boot_button_; // 启动按钮对象
     Button key_button_; // 键按钮对象
     adc_oneshot_unit_handle_t adc1_handle; // ADC 单次采样单元句柄
@@ -77,150 +79,58 @@ private:
     int64_t last_key_press_time = 0; // 上次按键时间
     static const int64_t LONG_PRESS_TIMEOUT_US = 5 * 1000000ULL; // 长按超时时间
 
-    // Members for Any Motion
-    SemaphoreHandle_t any_motion_semaphore_ = NULL;
-    TaskHandle_t any_motion_task_handle_ = NULL;
-    bool any_motion_isr_service_installed_ = false;
+    void InitializeI2c() {
+        ESP_LOGI(TAG, "InitializeI2c: Using SDA_PIN=%d, SCL_PIN=%d",
+                I2C_MASTER_SDA_PIN, I2C_MASTER_SCL_PIN);
 
-    static void IRAM_ATTR class_gpio_isr_edge_handler(void* arg) {
-        SemaphoreHandle_t semaphore = (SemaphoreHandle_t)arg;
-        BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+        // —— 高层 I2C 总线配置 ——  
+        i2c_master_bus_config_t i2c_bus_cfg = {
+            .i2c_port = I2C_NUM_0,
+            .sda_io_num = I2C_MASTER_SDA_PIN,
+            .scl_io_num = I2C_MASTER_SCL_PIN,
+            .clk_source = I2C_CLK_SRC_DEFAULT,
+            .glitch_ignore_cnt = 7,
+            .intr_priority = 0,
+            .trans_queue_depth = 0,
+            .flags = { .enable_internal_pullup = 1 },
+        };
+        ESP_ERROR_CHECK(i2c_new_master_bus(&i2c_bus_cfg, &i2c_bus_));
 
-        if (semaphore != NULL) {
-            xSemaphoreGiveFromISR(semaphore, &xHigherPriorityTaskWoken);
-        }
-
-        if (xHigherPriorityTaskWoken) {
-            portYIELD_FROM_ISR();
-        }
-    }
-
-    static void any_motion_event_handler_task_impl(void *pvParameters) {
-        EspSpotS3Bot *self = static_cast<EspSpotS3Bot*>(pvParameters);
-        struct bmi2_dev *bmi_dev = self->bmi_handle_;
-        uint16_t int_status = 0;
-        int8_t rslt;
-
-        ESP_LOGI(TAG, "AnyMotionEventHandlerTask started. Waiting for motion...");
-
-        while (true) {
-            if (xSemaphoreTake(self->any_motion_semaphore_, portMAX_DELAY) == pdTRUE) {
-                ESP_LOGI(TAG, "GPIO interrupt received for Any Motion.");
-                rslt = bmi2_get_int_status(&int_status, bmi_dev);
-                if (rslt != BMI2_OK) {
-                    ESP_LOGE(TAG, "Failed to get BMI270 interrupt status: %d", rslt);
-                    bmi2_error_codes_print_result(rslt);
-                    vTaskDelay(pdMS_TO_TICKS(100));
-                    continue;
-                }
-
-                if (int_status & BMI270_ANY_MOT_STATUS_MASK) {
-                    ESP_LOGI(TAG, ">>> Any-motion event detected! Interrupt Status: 0x%04X", int_status);
-                } else {
-                    ESP_LOGW(TAG, "GPIO interrupt received, but Any Motion status bit not set. Int_status: 0x%04X", int_status);
-                }
-            }
-        }
-    }
-
-    int8_t bmi270_enable_any_motion_feature() {
-        struct bmi2_dev *bmi_dev = this->bmi_handle_;
-        int8_t rslt = BMI2_OK;
-
-        if (!bmi_dev) {
-            ESP_LOGE(TAG, "BMI2 device handle (this->bmi_handle_) is NULL!");
-            return BMI2_E_NULL_PTR;
-        }
-
-        if (this->any_motion_semaphore_ == NULL) {
-            this->any_motion_semaphore_ = xSemaphoreCreateBinary();
-            if (this->any_motion_semaphore_ == NULL) {
-                ESP_LOGE(TAG, "Failed to create any_motion_semaphore_!");
-                return BMI2_E_COM_FAIL;
-            }
-        } else {
-            xSemaphoreTake(this->any_motion_semaphore_, 0);
-        }
-
-        gpio_config_t io_conf = {};
-        io_conf.intr_type = GPIO_INTR_ANYEDGE;
-        io_conf.pin_bit_mask = (1ULL << I2C_INT_IO);
-        io_conf.mode = GPIO_MODE_INPUT;
-        io_conf.pull_down_en = GPIO_PULLDOWN_ENABLE;
-        io_conf.pull_up_en = GPIO_PULLUP_DISABLE;
-        ESP_ERROR_CHECK(gpio_config(&io_conf));
-
-        if (!this->any_motion_isr_service_installed_) {
-            esp_err_t gpio_isr_ret = gpio_install_isr_service(ESP_INTR_FLAG_LEVEL1);
-            if (gpio_isr_ret == ESP_OK) {
-                this->any_motion_isr_service_installed_ = true;
-            } else if (gpio_isr_ret == ESP_ERR_INVALID_STATE) {
-                ESP_LOGW(TAG, "GPIO ISR service already installed.");
-                this->any_motion_isr_service_installed_ = true;
+        // —— 底层 bus：给 BMI270 用 ——  
+        {
+            i2c_config_t bus_conf;
+            memset(&bus_conf, 0, sizeof(bus_conf));
+            bus_conf.mode           = I2C_MODE_MASTER;
+            bus_conf.sda_io_num     = I2C_MASTER_SDA_PIN;
+            bus_conf.sda_pullup_en  = GPIO_PULLUP_ENABLE;
+            bus_conf.scl_io_num     = I2C_MASTER_SCL_PIN;
+            bus_conf.scl_pullup_en  = GPIO_PULLUP_ENABLE;
+            bus_conf.master.clk_speed = I2C_MASTER_FREQ_HZ;  // 100kHz
+            this->lowlevel_i2c_bus_ = i2c_bus_create(I2C_NUM_0, &bus_conf);
+            if (!this->lowlevel_i2c_bus_) {
+                ESP_LOGE(TAG, "Low-level I2C bus (for BMI270) creation failed!");
+                abort(); 
             } else {
-                ESP_LOGE(TAG, "Failed to install GPIO ISR service: %s", esp_err_to_name(gpio_isr_ret));
-                return BMI2_E_COM_FAIL;
+                ESP_LOGI(TAG, "Low-level I2C bus (lowlevel_i2c_bus_ for BMI270) created: %p", this->lowlevel_i2c_bus_);
             }
         }
-
-        gpio_isr_handler_remove(I2C_INT_IO);
-        esp_err_t add_isr_ret = gpio_isr_handler_add(I2C_INT_IO, EspSpotS3Bot::class_gpio_isr_edge_handler, (void*)this->any_motion_semaphore_);
-        if (add_isr_ret != ESP_OK) {
-            ESP_LOGE(TAG, "Failed to add GPIO ISR handler: %s", esp_err_to_name(add_isr_ret));
-            if (this->any_motion_semaphore_ != NULL) {
-                vSemaphoreDelete(this->any_motion_semaphore_);
-                this->any_motion_semaphore_ = NULL;
-            }
-            return BMI2_E_COM_FAIL;
+        // Logging for clarity (from your original code)
+        ESP_LOGI(TAG, "bmi270_enable_wrist_gesture: Entry. i2c_bus_ (high-level) handle: %p", this->i2c_bus_);
+        ESP_LOGI(TAG, "GetAudioCodec: Entry. i2c_bus_ (high-level) handle before static audio_codec init: %p", this->i2c_bus_);
+        
+        // 2) 创建 BMI270 传感器对象
+        bmi270_i2c_config_t bmi_conf = {
+            .i2c_handle = lowlevel_i2c_bus_,
+            .i2c_addr   = BMI270_I2C_ADDRESS,  // 0x68 或 0x69
+        };
+        esp_err_t err = bmi270_sensor_create(&bmi_conf, &bmi_handle_);
+        if (err != ESP_OK || !bmi_handle_) {
+            ESP_LOGE(TAG, "bmi270_enable_wrist_gesture: bmi270_sensor_create failed (%d)", err);
+            return;
         }
-
-        uint8_t sens_list[2] = { BMI2_ACCEL, BMI2_ANY_MOTION };
-        rslt = bmi2_sensor_enable(sens_list, 2, bmi_dev);
-        if (rslt != BMI2_OK) {
-            ESP_LOGE(TAG, "bmi2_sensor_enable for Any Motion failed.");
-            return rslt;
-        }
-
-        rslt = set_feature_config(bmi_dev);
-        if (rslt != BMI2_OK) {
-            ESP_LOGE(TAG, "set_feature_config for Any Motion failed.");
-            return rslt;
-        }
-
-        struct bmi2_sens_int_config sens_int_cfg = { .type = BMI2_ANY_MOTION, .hw_int_pin = BMI2_INT1 };
-        rslt = bmi2_map_feat_int(sens_int_cfg.type, sens_int_cfg.hw_int_pin, bmi_dev);
-        if (rslt != BMI2_OK) {
-            ESP_LOGE(TAG, "bmi2_map_feat_int for Any Motion failed.");
-            return rslt;
-        }
-
-        if (this->any_motion_task_handle_ == NULL) {
-            BaseType_t task_created = xTaskCreate(
-                EspSpotS3Bot::any_motion_event_handler_task_impl,
-                "any_motion_task",
-                4096,
-                this,
-                5,
-                &this->any_motion_task_handle_
-            );
-            if (task_created != pdPASS) {
-                ESP_LOGE(TAG, "Failed to create any_motion_task. Error code: %d", task_created);
-                this->any_motion_task_handle_ = NULL;
-                if (this->any_motion_semaphore_ != NULL) {
-                    vSemaphoreDelete(this->any_motion_semaphore_);
-                    this->any_motion_semaphore_ = NULL;
-                }
-                return BMI2_E_COM_FAIL;
-            } else {
-                ESP_LOGI(TAG, "any_motion_task created successfully.");
-            }
-        } else {
-            ESP_LOGW(TAG, "any_motion_task already running or previously created.");
-        }
-
-        return rslt;
+        ESP_LOGI(TAG, "BMI270 sensor handle: %p", bmi_handle_);
     }
-    
+
     int8_t set_accel_gyro_config(struct bmi2_dev *dev) {
         // Example configuration (ADAPT THIS TO YOUR NEEDS)
         int8_t rslt;
@@ -422,6 +332,198 @@ private:
 
     }
 
+    int8_t bmi270_enable_any_motion(struct bmi2_dev *bmi2_dev)
+    {
+        int8_t rslt = BMI2_OK;
+        ESP_LOGI(TAG, "Initializing Any Motion Detection...");
+
+        // 1. Check BMI2 device handle (similar to reference code's check)
+        if (!bmi2_dev) {
+            ESP_LOGE(TAG, "BMI2 device handle is NULL!");
+            return BMI2_E_NULL_PTR;
+        }
+
+        // 2. Create semaphore for ISR-task communication
+        if (s_any_motion_semaphore == NULL) { // Create only once
+            s_any_motion_semaphore = xSemaphoreCreateBinary();
+            if (s_any_motion_semaphore == NULL) {
+                ESP_LOGE(TAG, "Failed to create any_motion semaphore!");
+                return BMI2_E_COM_FAIL; // Or a more appropriate error
+            }
+        } else {
+            // If called again, ensure semaphore is empty before reuse
+            xSemaphoreTake(s_any_motion_semaphore, 0);
+        }
+
+
+        // 3. Configure GPIO pin for interrupt from BMI270
+        gpio_config_t io_conf = {};
+        io_conf.intr_type = GPIO_INTR_ANYEDGE;       // 设置中断类型为任意边沿触发 (上升沿或下降沿)
+                                                    // BMI270 的中断引脚电平变化时都会触发
+        io_conf.pin_bit_mask = (1ULL << I2C_INT_IO); // 指定用于中断的 GPIO 引脚号 (I2C_INT_IO 是一个宏定义)
+        io_conf.mode = GPIO_MODE_INPUT;              // 设置 GPIO模式为输入
+        io_conf.pull_down_en = 1;                    // 使能内部下拉电阻。
+                                                    // 这取决于 BMI270 中断引脚的电气特性 (例如，如果中断是高电平有效，
+                                                    // 且空闲时可能悬空，则下拉可以确保其在空闲时为低电平)
+        gpio_config(&io_conf);                       // 应用 GPIO 配置
+
+        // Install GPIO ISR service (if not already installed globally)
+        // ESP_INTR_FLAG_DEFAULT (0) is fine.
+        // This might fail if already installed. Consider checking return or installing once globally.
+        static bool isr_service_installed = false;
+        if (!isr_service_installed) {
+            esp_err_t gpio_isr_ret = gpio_install_isr_service(ESP_INTR_FLAG_LEVEL1); // Or other appropriate flags
+            if (gpio_isr_ret == ESP_OK) {
+                isr_service_installed = true;
+            } else if (gpio_isr_ret == ESP_ERR_INVALID_STATE) {
+                ESP_LOGW(TAG, "GPIO ISR service already installed.");
+                isr_service_installed = true; // Assume it's usable
+            } else {
+                ESP_LOGE(TAG, "Failed to install GPIO ISR service: %s", esp_err_to_name(gpio_isr_ret));
+                return BMI2_E_COM_FAIL; // Or map esp_err_t to int8_t
+            }
+        }
+
+        // Add ISR handler for the specific pin
+        // Remove previous handler if one exists for this pin, then add.
+        gpio_isr_handler_remove(I2C_INT_IO);
+        esp_err_t add_isr_ret = gpio_isr_handler_add(I2C_INT_IO, gpio_isr_edge_handler_anymotion, (void*) I2C_INT_IO);
+        if (add_isr_ret != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to add GPIO ISR handler: %s", esp_err_to_name(add_isr_ret));
+            return BMI2_E_COM_FAIL;
+        }
+        gpio_intr_enable(I2C_INT_IO); // Ensure interrupt is enabled for the pin
+
+        // 4. Enable required sensors: Accelerometer and Any Motion feature
+        uint8_t sens_list[2] = { BMI2_ACCEL, BMI2_ANY_MOTION };
+        ESP_LOGI(TAG, "Enabling Accel and Any Motion sensors...");
+        // Assuming bmi270_sensor_enable is a wrapper for bmi2_sensor_enable
+        rslt = bmi2_sensor_enable(sens_list, 2, bmi2_dev);
+        bmi2_error_codes_print_result(rslt);
+        if (rslt != BMI2_OK) {
+            ESP_LOGE(TAG, "bmi2_sensor_enable failed.");
+            return rslt;
+        }
+
+        // 5. Configure Any Motion feature (thresholds, duration, etc.)
+        // This is where set_feature_config() from your original code is called.
+        // It's crucial that this function properly configures the any-motion detection parameters.
+        // For example, it might call bmi2_set_adv_power_save or bmi2_set_feature_config internally.
+        //
+        // If you wanted to configure it like the wrist gesture example:
+        // struct bmi2_sens_config sens_cfg = {0};
+        // sens_cfg.type = BMI2_ANY_MOTION;
+        // rslt = bmi2_get_sensor_config(&sens_cfg, 1, bmi2_dev);
+        // bmi2_error_codes_print_result(rslt);
+        // if (rslt == BMI2_OK) {
+        //     // Modify sens_cfg.cfg.any_motion parameters here
+        //     // e.g., sens_cfg.cfg.any_motion.threshold = YOUR_THRESHOLD; (actual struct member name might differ)
+        //     //       sens_cfg.cfg.any_motion.duration = YOUR_DURATION;
+        //     ESP_LOGI(TAG, "Setting Any Motion feature configuration...");
+        //     rslt = bmi2_set_sensor_config(&sens_cfg, 1, bmi2_dev);
+        //     bmi2_error_codes_print_result(rslt);
+        // }
+        //
+        // Using the provided set_feature_config:
+        ESP_LOGI(TAG, "Setting Any Motion feature configuration using set_feature_config()...");
+        rslt = set_feature_config(bmi2_dev); // This function must configure any-motion parameters
+        bmi2_error_codes_print_result(rslt);
+        if (rslt != BMI2_OK) {
+            ESP_LOGE(TAG, "set_feature_config for Any Motion failed.");
+            return rslt;
+        }
+
+        // 6. Map Any Motion interrupt to a hardware interrupt pin (INT1 or INT2)
+        struct bmi2_sens_int_config sens_int = { .type = BMI2_ANY_MOTION, .hw_int_pin = BMI2_INT1 };
+        ESP_LOGI(TAG, "Mapping Any Motion feature interrupt to INT1...");
+        // Assuming bmi270_map_feat_int is a wrapper for bmi2_map_feat_int
+        rslt = bmi2_map_feat_int(&sens_int, 1, bmi2_dev);
+        bmi2_error_codes_print_result(rslt);
+        if (rslt != BMI2_OK) {
+            ESP_LOGE(TAG, "bmi2_map_feat_int for Any Motion failed.");
+            return rslt;
+        }
+
+        ESP_LOGI(TAG, "BMI270 Any Motion detection initialized and configured.");
+        ESP_LOGI(TAG, "Move the board to trigger Any Motion interrupt.");
+
+        // 7. Create the handler task
+        // Ensure task is not created multiple times if this function is called again
+        static TaskHandle_t s_any_motion_task_handle = NULL;
+        if (s_any_motion_task_handle == NULL) {
+            BaseType_t task_created = xTaskCreate(
+                any_motion_event_handler_task,
+                "any_motion_task", // Task name
+                4096,              // Stack size (adjust as needed)
+                (void*)bmi2_dev,   // Pass bmi2_dev as parameter
+                5,                 // Priority
+                &s_any_motion_task_handle // Task handle
+            );
+
+            if (task_created != pdPASS) {
+                ESP_LOGE(TAG, "Failed to create any_motion_task. Error code: %d", task_created);
+                s_any_motion_task_handle = NULL; // Ensure handle is NULL on failure
+                return BMI2_E_COM_FAIL; // Or a more specific error
+            } else {
+                ESP_LOGI(TAG, "any_motion_task created successfully.");
+            }
+        } else {
+            ESP_LOGW(TAG, "any_motion_task already running or previously created.");
+            // If task can be re-purposed, you might need to signal it or reset its state
+        }
+        
+        return rslt; // Return the status of the last critical BMI2 API call
+    }
+
+    // --- Any Motion Event Handler Task ---
+    static void any_motion_event_handler_task(void *pvParameters)
+    {
+        struct bmi2_dev *bmi2_dev = (struct bmi2_dev *)pvParameters;
+        uint16_t int_status = 0;
+        int8_t rslt;
+
+        ESP_LOGI(TAG, "AnyMotionEventHandlerTask started. Waiting for motion...");
+
+        while (1) {
+            // Wait for the semaphore to be given by the ISR
+            if (xSemaphoreTake(s_any_motion_semaphore, portMAX_DELAY) == pdTRUE) {
+                ESP_LOGI(TAG, "GPIO interrupt received for Any Motion.");
+
+                // Interrupt received, now check BMI270 internal interrupt status
+                rslt = bmi2_get_int_status(&int_status, bmi2_dev);
+                if (rslt != BMI2_OK) {
+                    ESP_LOGE(TAG, "Failed to get BMI270 interrupt status: %d", rslt);
+                    bmi2_error_codes_print_result(rslt);
+                    // Optionally, add a small delay before retrying or continuing
+                    vTaskDelay(pdMS_TO_TICKS(100));
+                    continue;
+                }
+
+                // Check if the "Any Motion" interrupt flag is set
+                // BMI270_ANY_MOT_STATUS_MASK should be defined in bmi270.h or similar
+                // e.g., #define BMI270_ANY_MOT_STATUS_MASK BMI2_ANY_MOT_INT_ASSERTED (or specific bit mask)
+                // From BMI270 datasheet, for INT_STATUS_0, Any-motion is bit 0 when feature page is selected.
+                // From bmi2_defs.h, BMI2_ANY_MOT_INT seems to be the status mask.
+                if (int_status & BMI270_ANY_MOT_STATUS_MASK) { // Using BMI2_ANY_MOT_INT from bmi2_defs.h
+                    ESP_LOGI(TAG, ">>> Any-motion event detected! Interrupt Status: 0x%04X", int_status);
+                    // Add any specific actions needed upon detecting any motion
+                    // For example, trigger an event, send a message, etc.
+
+                    // Note: "Any motion" itself doesn't have detailed data like gesture ID.
+                    // The event is the detection itself.
+                } else {
+                    // This case might occur if the GPIO interrupt was triggered by something else
+                    // or if the interrupt status was cleared before this check.
+                    ESP_LOGW(TAG, "GPIO interrupt received, but Any Motion status bit not set. Int_status: 0x%04X", int_status);
+                }
+                // No explicit clearing of interrupt status is usually needed for status registers,
+                // as reading them often clears the latched bits. Check BMI270 datasheet if specific clearing is needed.
+
+            }
+            // The task will block on xSemaphoreTake, so no vTaskDelay is needed here for polling.
+        }
+    }
+
     void ImuEventHandlerTask() {
         ESP_LOGI(TAG, "ImuEventHandlerTask started.");
         uint16_t int_status = 0;
@@ -487,59 +589,22 @@ private:
                 vTaskDelay(pdMS_TO_TICKS(500));
                 led->SetSingleColor(0, {0, 0,  0});
             }
+            // 
+            // if (int_status & BMI2_TILT_INT) { // Replace with actual macro for Tilt interrupt
+            //     // Handle Tilt
+            //     // struct bmi2_sensor_data tilt_data;
+            //     // tilt_data.type = BMI2_TILT;
+            //     // bmi270_get_sensor_data(&tilt_data, 1, bmi_handle_); // Or bmi2_get_feature_data if tilt is a feature
+            //     ESP_LOGI(TAG, "Tilt detected! Output: %d", tilt_data.sens_data.scalar_u16); // Example
+            // }
+            // if (int_status & BMI2_DOUBLE_TAP_INT) { 
+            //     // Handle Double Tap
+            //     ESP_LOGI(TAG, "Double Tap Detected!");
+            //     // Double tap might not have specific "data" other than the event itself.
+            // }
+
             vTaskDelay(pdMS_TO_TICKS(100));
         }
-    }
-    
-    void InitializeI2c() {
-        ESP_LOGI(TAG, "InitializeI2c: Using SDA_PIN=%d, SCL_PIN=%d",
-                I2C_MASTER_SDA_PIN, I2C_MASTER_SCL_PIN);
-        // —— 高层 I2C 总线配置 ——  
-        i2c_master_bus_config_t i2c_bus_cfg = {
-            .i2c_port = I2C_NUM_0,
-            .sda_io_num = I2C_MASTER_SDA_PIN,
-            .scl_io_num = I2C_MASTER_SCL_PIN,
-            .clk_source = I2C_CLK_SRC_DEFAULT,
-            .glitch_ignore_cnt = 7,
-            .intr_priority = 0,
-            .trans_queue_depth = 0,
-            .flags = { .enable_internal_pullup = 1 },
-        };
-        ESP_ERROR_CHECK(i2c_new_master_bus(&i2c_bus_cfg, &i2c_bus_));
-        // —— 底层 bus：给 BMI270 用 ——  
-        {
-            i2c_config_t bus_conf;
-            memset(&bus_conf, 0, sizeof(bus_conf));
-            bus_conf.mode = I2C_MODE_MASTER;
-            bus_conf.sda_io_num = I2C_MASTER_SDA_PIN;
-            bus_conf.sda_pullup_en = GPIO_PULLUP_ENABLE;
-            bus_conf.scl_io_num = I2C_MASTER_SCL_PIN;
-            bus_conf.scl_pullup_en = GPIO_PULLUP_ENABLE;
-            bus_conf.master.clk_speed = I2C_MASTER_FREQ_HZ;
-
-            this->lowlevel_i2c_bus_ = i2c_bus_create(I2C_NUM_0, &bus_conf);
-            if (!this->lowlevel_i2c_bus_) {
-                ESP_LOGE(TAG, "Low-level I2C bus (for BMI270) creation failed!");
-                abort(); 
-            } else {
-                ESP_LOGI(TAG, "Low-level I2C bus (lowlevel_i2c_bus_ for BMI270) created: %p", this->lowlevel_i2c_bus_);
-            }
-        }
-
-        ESP_LOGI(TAG, "bmi270_enable_wrist_gesture: Entry. i2c_bus_ (high-level) handle: %p", this->i2c_bus_);
-        ESP_LOGI(TAG, "GetAudioCodec: Entry. i2c_bus_ (high-level) handle before static audio_codec init: %p", this->i2c_bus_);
-
-        // 2) 创建 BMI270 传感器对象
-        bmi270_i2c_config_t i2c_bmi270_conf = {
-            .i2c_handle = lowlevel_i2c_bus_,
-            .i2c_addr = BMI270_I2C_ADDRESS,
-        };
-        esp_err_t err = bmi270_sensor_create(&i2c_bmi270_conf, &bmi_handle_);
-        if (err != ESP_OK || !bmi_handle_) {
-            ESP_LOGE(TAG, "bmi270_sensor_create failed (%d)", err);
-            return;
-        }
-        ESP_LOGI(TAG, "BMI270 sensor handle: %p", bmi_handle_);
     }
     
     void InitializeADC() { // 初始化 ADC
@@ -682,38 +747,30 @@ private:
         ESP_ERROR_CHECK(esp_timer_create(&timer_args, &blink_timer)); // 创建定时器
         ESP_ERROR_CHECK(esp_timer_start_once(blink_timer, LONG_PRESS_TIMEOUT_US)); // 启动定时器
     }
+
 public:
+
     EspSpotS3Bot() : boot_button_(BOOT_BUTTON_GPIO), key_button_(KEY_BUTTON_GPIO, true) {
-        InitializePowerCtl();
-        InitializeADC();
-        InitializeI2c();
-        InitializeButtons();
-        InitializeIot();
-        bmi270_enable_wrist_gesture();
+        InitializePowerCtl(); // 初始化电源控制
+        InitializeADC(); // 初始化 ADC
+        InitializeI2c(); // 初始化 I2C
+        InitializeButtons(); // 初始化按钮
+        InitializeIot(); // 初始化 IoT
+        // bmi270_enable_wrist_gesture();
         bmi270_enable_accel_gyro();
-
-        // if (this->bmi_handle_) {
-        //     int8_t any_motion_rslt = this->bmi270_enable_any_motion_feature(); 
-        //     if (any_motion_rslt != BMI2_OK) {
-        //         ESP_LOGE(TAG, "Failed to enable Any Motion feature: %d", any_motion_rslt);
-        //     }
-        // } else {
-        //     ESP_LOGE(TAG, "bmi_handle_ is NULL, cannot enable Any Motion.");
-        // }
     }
 
-    virtual Led* GetLed() override {
-        static CircularStrip led(LED_PIN, 1);
-        return &led;
+    virtual Led* GetLed() override { // 获取 LED 对象
+        static CircularStrip led(LED_PIN, 1); // 静态环形 LED 条对象
+        return &led; // 返回 LED 对象
     }
 
-    virtual AudioCodec* GetAudioCodec() override {
-        static Es8311AudioCodec audio_codec(i2c_bus_, I2C_NUM_0,
-            AUDIO_INPUT_SAMPLE_RATE, AUDIO_OUTPUT_SAMPLE_RATE, AUDIO_I2S_GPIO_MCLK,
-            AUDIO_I2S_GPIO_BCLK, AUDIO_I2S_GPIO_WS, AUDIO_I2S_GPIO_DOUT,
-            AUDIO_I2S_GPIO_DIN, AUDIO_CODEC_PA_PIN,
+    virtual AudioCodec* GetAudioCodec() override { // 获取音频编解码器对象
+         static Es8311AudioCodec audio_codec(i2c_bus_, I2C_NUM_0,
+            AUDIO_INPUT_SAMPLE_RATE, AUDIO_OUTPUT_SAMPLE_RATE, AUDIO_I2S_GPIO_MCLK, AUDIO_I2S_GPIO_BCLK,
+            AUDIO_I2S_GPIO_WS, AUDIO_I2S_GPIO_DOUT, AUDIO_I2S_GPIO_DIN, AUDIO_CODEC_PA_PIN,
             AUDIO_CODEC_ES8311_ADDR, false);
-        return &audio_codec;
+        return &audio_codec; // 返回音频编解码器对象
     }
 
     virtual bool GetBatteryLevel(int &level, bool &charging, bool &discharging) { // 获取电池电量
@@ -746,4 +803,5 @@ public:
         return true; // 返回成功
     }
 };
-DECLARE_BOARD(EspSpotS3Bot);
+
+DECLARE_BOARD(EspSpotS3Bot); // 声明 EspSpotS3Bot 板

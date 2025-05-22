@@ -198,33 +198,42 @@ private:
             return BMI2_E_COM_FAIL;
         }
 
-        // 5. Enable sensors
-        uint8_t sens_list[2] = { BMI2_ACCEL, BMI2_ANY_MOTION };
-        rslt = bmi2_sensor_enable(sens_list, 2, bmi_dev);
+        // 5. Configure accelerometer and gyroscope first
+        rslt = set_accel_gyro_config(bmi_dev);
         if (rslt != BMI2_OK) {
-            ESP_LOGE(TAG, "Failed to enable sensors: %d", rslt);
+            ESP_LOGE(TAG, "Failed to configure accelerometer and gyroscope: %d", rslt);
             return rslt;
         }
-
         // 6. Configure Any Motion feature
+        struct bmi2_sens_int_config sens_int_cfg = { 
+            .type = BMI2_ANY_MOTION, 
+            .hw_int_pin = BMI2_INT1 
+        };
+
+        // 6. Enable accelerometer and gyroscope first
+        uint8_t sensor_list[2] = { BMI2_ACCEL, BMI2_ANY_MOTION };
+        rslt = bmi270_sensor_enable(sensor_list, 2, bmi_dev);
+        if (rslt != BMI2_OK) {
+            ESP_LOGE(TAG, "Failed to enable accelerometer and gyroscope: %d", rslt);
+            return rslt;
+        }
+        ESP_LOGI(TAG, "Accelerometer and gyroscope enabled successfully");
+
+        // 7. Configure Any Motion feature
         rslt = set_feature_config(bmi_dev);
         if (rslt != BMI2_OK) {
             ESP_LOGE(TAG, "Failed to configure Any Motion feature: %d", rslt);
             return rslt;
         }
 
-        // 7. Map Any Motion interrupt to INT1
-        struct bmi2_sens_int_config sens_int_cfg = { 
-            .type = BMI2_ANY_MOTION, 
-            .hw_int_pin = BMI2_INT1 
-        };
-        rslt = bmi2_map_feat_int(sens_int_cfg.type, sens_int_cfg.hw_int_pin, bmi_dev);
+        // 8. Map Any Motion interrupt to INT1
+        rslt = bmi270_map_feat_int(&sens_int_cfg, 1, bmi_dev);
         if (rslt != BMI2_OK) {
             ESP_LOGE(TAG, "Failed to map Any Motion interrupt: %d", rslt);
             return rslt;
         }
 
-        // 8. Create task for handling Any Motion events
+        // 9. Create task for handling Any Motion events
         if (this->any_motion_task_handle_ == NULL) {
             BaseType_t task_created = xTaskCreate(
                 EspSpotS3Bot::any_motion_event_handler_task_impl,
@@ -249,35 +258,46 @@ private:
     }
     
     int8_t set_accel_gyro_config(struct bmi2_dev *dev) {
-        // Example configuration (ADAPT THIS TO YOUR NEEDS)
         int8_t rslt;
         struct bmi2_sens_config config[2];
 
         // Configure Accelerometer
         config[0].type = BMI2_ACCEL;
         rslt = bmi2_get_sensor_config(&config[0], 1, dev);
-        if (rslt != BMI2_OK) return rslt;
-        config[0].cfg.acc.odr = BMI2_ACC_ODR_100HZ; // Output Data Rate
-        config[0].cfg.acc.range = BMI2_ACC_RANGE_2G; // Range (+/- 2G, 4G, 8G, 16G)
-        config[0].cfg.acc.bwp = BMI2_ACC_NORMAL_AVG4; // Bandwidth parameter (filter)
+        if (rslt != BMI2_OK) {
+            ESP_LOGE(TAG, "Failed to get accelerometer config: %d", rslt);
+            return rslt;
+        }
+
+        // Set accelerometer configuration
+        config[0].cfg.acc.odr = BMI2_ACC_ODR_100HZ;  // Output Data Rate
+        config[0].cfg.acc.range = BMI2_ACC_RANGE_2G; // Range (+/- 2G)
+        config[0].cfg.acc.bwp = BMI2_ACC_NORMAL_AVG4; // Bandwidth parameter
         config[0].cfg.acc.filter_perf = BMI2_PERF_OPT_MODE; // Filter performance mode
 
         // Configure Gyroscope
         config[1].type = BMI2_GYRO;
         rslt = bmi2_get_sensor_config(&config[1], 1, dev);
-        if (rslt != BMI2_OK) return rslt;
+        if (rslt != BMI2_OK) {
+            ESP_LOGE(TAG, "Failed to get gyroscope config: %d", rslt);
+            return rslt;
+        }
+
+        // Set gyroscope configuration
         config[1].cfg.gyr.odr = BMI2_GYR_ODR_100HZ; // Output Data Rate
-        config[1].cfg.gyr.range = BMI2_GYR_RANGE_2000; // Range (+/- 125, 250, 500, 1000, 2000 DPS)
+        config[1].cfg.gyr.range = BMI2_GYR_RANGE_2000; // Range (+/- 2000 DPS)
         config[1].cfg.gyr.bwp = BMI2_GYR_NORMAL_MODE; // Bandwidth parameter
         config[1].cfg.gyr.filter_perf = BMI2_PERF_OPT_MODE; // Filter performance mode
         config[1].cfg.gyr.noise_perf = BMI2_POWER_OPT_MODE; // Noise performance mode
 
+        // Set the configurations
         rslt = bmi2_set_sensor_config(config, 2, dev);
-        if (rslt != BMI2_OK) return rslt;
+        if (rslt != BMI2_OK) {
+            ESP_LOGE(TAG, "Failed to set sensor configurations: %d", rslt);
+            return rslt;
+        }
 
-        ESP_LOGI(TAG, "Accelerometer configured: ODR=100Hz, Range=2G"); // Adjust log based on actual settings
-        ESP_LOGI(TAG, "Gyroscope configured: ODR=100Hz, Range=2000DPS"); // Adjust log based on actual settings
-        
+        ESP_LOGI(TAG, "Accelerometer and gyroscope configured successfully");
         return BMI2_OK;
     }
 
@@ -417,7 +437,7 @@ private:
         // 3) 使能相关检测
         uint8_t sens_list[] = { BMI2_ACCEL, BMI2_WRIST_GESTURE };
         uint8_t num_sensors = sizeof(sens_list) / sizeof(sens_list[0]); // 正确计算传感器数量
-        bmi270_sensor_enable(sens_list, num_sensors, bmi_handle_);
+        bmi2_sensor_enable(sens_list, num_sensors, bmi_handle_);
         // 4) 配置手势——检测哪只手、灵敏度等
         struct bmi2_sens_config cfg = { .type = BMI2_WRIST_GESTURE };
         bmi270_get_sensor_config(&cfg, 1, bmi_handle_);

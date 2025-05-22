@@ -198,12 +198,6 @@ private:
             return BMI2_E_COM_FAIL;
         }
 
-        // 5. Configure accelerometer and gyroscope first
-        rslt = set_accel_gyro_config(bmi_dev);
-        if (rslt != BMI2_OK) {
-            ESP_LOGE(TAG, "Failed to configure accelerometer and gyroscope: %d", rslt);
-            return rslt;
-        }
         // 6. Configure Any Motion feature
         struct bmi2_sens_int_config sens_int_cfg = { 
             .type = BMI2_ANY_MOTION, 

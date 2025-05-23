@@ -14,6 +14,9 @@ public:
         WRIST_GESTURE = 0x04
     };
 
+    // 手势输出字符串数组
+    static const char* const GESTURE_OUTPUT_STRINGS[6];
+
     struct Config {
         uint8_t features; // Feature bitmask
         gpio_num_t int_pin; // GPIO pin for interrupt

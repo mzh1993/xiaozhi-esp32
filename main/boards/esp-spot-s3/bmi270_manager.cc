@@ -72,27 +72,44 @@ bool Bmi270Manager::Init(const Config& config) {
         if (ConfigureAccelGyro() != BMI2_OK) return false;
         // 启动数据读取任务
         xTaskCreate(AccelGyroTaskImpl, "bmi270_accel_gyro", 4096, this, 5, &accel_gyro_task_handle_);
+        ESP_LOGI(TAG, "AccelGyro feature enabled successfully");
     }
     if (config.features & ANY_MOTION) {
         if (ConfigureAnyMotion() != BMI2_OK) return false;
         // 启动任意运动检测任务
         xTaskCreate(AnyMotionTaskImpl, "bmi270_any_motion", 4096, this, 5, &any_motion_task_handle_);
+        ESP_LOGI(TAG, "Any Motion feature enabled successfully");
     }
     if (config.features & WRIST_GESTURE) {
         if (ConfigureWristGesture() != BMI2_OK) return false;
         // 启动手势识别任务
         xTaskCreate(GestureTaskImpl, "bmi270_gesture", 4096, this, 5, &gesture_task_handle_);
+        ESP_LOGI(TAG, "Wrist Gesture feature enabled successfully");
     }
     return true;
 }
 
 void Bmi270Manager::OnAnyMotion() {
+    if (any_motion_callback_) {
+        any_motion_callback_();
+        return;
+    }
     ESP_LOGI(TAG, "Any Motion detected (default handler)");
 }
+
 void Bmi270Manager::OnWristGesture(int gesture_id) {
+    if (wrist_gesture_callback_) {
+        wrist_gesture_callback_(gesture_id);
+        return;
+    }
     ESP_LOGI(TAG, "Wrist Gesture detected: %d (default handler)", gesture_id);
 }
+
 void Bmi270Manager::OnAccelGyroData(float acc_x, float acc_y, float acc_z, float gyr_x, float gyr_y, float gyr_z) {
+    if (accel_gyro_callback_) {
+        accel_gyro_callback_(acc_x, acc_y, acc_z, gyr_x, gyr_y, gyr_z);
+        return;
+    }
     ESP_LOGI(TAG, "Accel: %.2f %.2f %.2f, Gyro: %.2f %.2f %.2f (default handler)", acc_x, acc_y, acc_z, gyr_x, gyr_y, gyr_z);
 }
 
@@ -112,6 +129,7 @@ void Bmi270Manager::AnyMotionTaskImpl(void* arg) {
         }
     }
 }
+
 void Bmi270Manager::AccelGyroTaskImpl(void* arg) {
     auto* self = static_cast<Bmi270Manager*>(arg);
     struct bmi2_sens_data sensor_data;
@@ -132,6 +150,7 @@ void Bmi270Manager::AccelGyroTaskImpl(void* arg) {
         vTaskDelay(pdMS_TO_TICKS(100));
     }
 }
+
 void Bmi270Manager::GestureTaskImpl(void* arg) {
     auto* self = static_cast<Bmi270Manager*>(arg);
     uint16_t int_status = 0;
@@ -160,6 +179,7 @@ void IRAM_ATTR Bmi270Manager::GpioIsrHandler(void* arg) {
 
 // 配置各功能（略，参考原有实现，需根据实际板子完善）
 int8_t Bmi270Manager::ConfigureAccelGyro() { return BMI2_OK; }
+
 int8_t Bmi270Manager::ConfigureAnyMotion() {
     if (!bmi_dev_) {
         ESP_LOGE(TAG, "BMI2 device handle is NULL!");
@@ -229,5 +249,7 @@ int8_t Bmi270Manager::ConfigureAnyMotion() {
     ESP_LOGI(TAG, "Any Motion feature configured successfully");
     return BMI2_OK;
 }
+
 int8_t Bmi270Manager::ConfigureWristGesture() { return BMI2_OK; }
+
 int8_t Bmi270Manager::EnableSensors(const uint8_t* sensor_list, uint8_t num) { return BMI2_OK; } 

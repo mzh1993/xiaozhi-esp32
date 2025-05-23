@@ -683,11 +683,19 @@ public:
 
         // 初始化BMI270，启用任意运动和手势识别
         Bmi270Manager::Config bmi_conf;
-        bmi_conf.features = Bmi270Manager::ANY_MOTION | Bmi270Manager::WRIST_GESTURE | Bmi270Manager::ACCEL_GYRO;
+        bmi_conf.features = Bmi270Manager::WRIST_GESTURE | Bmi270Manager::ACCEL_GYRO;
+        // bmi_conf.features = Bmi270Manager::ANY_MOTION | Bmi270Manager::WRIST_GESTURE | Bmi270Manager::ACCEL_GYRO;
         bmi_conf.int_pin = I2C_INT_IO;  // 使用config.h中定义的I2C_INT_IO
         
         // 设置BMI270设备句柄
         bmi270_manager_.bmi_dev_ = bmi_handle_;
+        
+        // 设置回调函数
+        bmi270_manager_.SetAnyMotionCallback([this]() { this->OnAnyMotion(); });
+        bmi270_manager_.SetWristGestureCallback([this](int id) { this->OnWristGesture(id); });
+        bmi270_manager_.SetAccelGyroCallback([this](float ax, float ay, float az, float gx, float gy, float gz) {
+            this->OnAccelGyroData(ax, ay, az, gx, gy, gz);
+        });
         
         // 初始化BMI270管理器
         if (!bmi270_manager_.Init(bmi_conf)) {

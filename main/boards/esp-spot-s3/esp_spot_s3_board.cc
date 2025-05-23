@@ -39,7 +39,7 @@ private:
     bool do_calibration = false; // 是否进行校准标志
     bool key_long_pressed = false; // 键长按标志
     int64_t last_key_press_time = 0; // 上次按键时间
-    static const int64_t LONG_PRESS_TIMEOUT_US = 5 * 1000000ULL; // 长按超时时间
+    static const int64_t LONG_PRESS_TIMEOUT_US = 3 * 1000000ULL; // 长按超时时间
 
     // BMI270管理器组件
     Bmi270Manager bmi270_manager_; 
@@ -326,7 +326,6 @@ public:
     }
 
     void OnWristGesture(int gesture_id) {
-        // 使用手势输出字符串数组来提供更友好的日志输出
         const char* gesture_name = (gesture_id >= 0 && gesture_id < 6) ? 
             Bmi270Manager::GESTURE_OUTPUT_STRINGS[gesture_id] : "invalid_gesture";
         ESP_LOGI(TAG, "[EspSpotS3Bot]  Wrist Gesture detected: %s (id: %d)", gesture_name, gesture_id);
@@ -369,6 +368,8 @@ public:
                 app.WakeWordInvoke(wake_word);
                 led->SetSingleColor(0, {128, 0,   128});
                 break;
+            // default ：
+            //     break;
         }
 
     }

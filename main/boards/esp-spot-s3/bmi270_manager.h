@@ -19,11 +19,21 @@ public:
         gpio_num_t int_pin; // GPIO pin for interrupt
     };
 
+    // 定义回调函数类型
+    using AnyMotionCallback = std::function<void()>;
+    using WristGestureCallback = std::function<void(int)>;
+    using AccelGyroCallback = std::function<void(float, float, float, float, float, float)>;
+
     Bmi270Manager();
     virtual ~Bmi270Manager();
 
     // 初始化BMI270，传入功能配置
     bool Init(const Config& config);
+
+    // 设置回调函数
+    void SetAnyMotionCallback(AnyMotionCallback cb) { any_motion_callback_ = cb; }
+    void SetWristGestureCallback(WristGestureCallback cb) { wrist_gesture_callback_ = cb; }
+    void SetAccelGyroCallback(AccelGyroCallback cb) { accel_gyro_callback_ = cb; }
 
     // 事件回调接口（可被主板类重载）
     virtual void OnAnyMotion();
@@ -44,6 +54,11 @@ protected:
     TaskHandle_t gesture_task_handle_ = nullptr;
     bool any_motion_isr_service_installed_ = false;
     gpio_num_t int_pin_ = GPIO_NUM_NC; // GPIO pin for interrupt
+
+    // 回调函数
+    AnyMotionCallback any_motion_callback_;
+    WristGestureCallback wrist_gesture_callback_;
+    AccelGyroCallback accel_gyro_callback_;
 
     // 任务实现
     static void AnyMotionTaskImpl(void* arg);

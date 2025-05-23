@@ -101,6 +101,22 @@ bool Bmi270Manager::Init(const Config& config) {
         xTaskCreate(GestureTaskImpl, "bmi270_gesture", 4096, this, 5, &gesture_task_handle_);
         ESP_LOGI(TAG, "Wrist Gesture feature enabled successfully");
     }
+    if (config.features & HIGH_G) {
+        if (ConfigureHighG() != BMI2_OK) {
+            ESP_LOGE(TAG, "Failed to configure High-G");
+            return false;
+        }
+        xTaskCreate(HighGTaskImpl, "bmi270_high_g", 4096, this, 5, nullptr);
+        ESP_LOGI(TAG, "High-G feature enabled successfully");
+    }
+    if (config.features & LOW_G) {
+        if (ConfigureLowG() != BMI2_OK) {
+            ESP_LOGE(TAG, "Failed to configure Low-G");
+            return false;
+        }
+        xTaskCreate(LowGTaskImpl, "bmi270_low_g", 4096, this, 5, nullptr);
+        ESP_LOGI(TAG, "Low-G feature enabled successfully");
+    }
     return true;
 }
 
@@ -189,6 +205,34 @@ void Bmi270Manager::GestureTaskImpl(void* arg) {
             }
         }
         vTaskDelay(pdMS_TO_TICKS(100));
+    }
+}
+
+void Bmi270Manager::HighGTaskImpl(void* arg) {
+    auto* self = static_cast<Bmi270Manager*>(arg);
+    uint16_t int_status = 0;
+    struct bmi2_feat_sensor_data sens_data = { .type = BMI2_HIGH_G };
+    while (true) {
+        bmi2_get_int_status(&int_status, self->bmi_dev_);
+        if (int_status & BMI270_HIGH_G_STATUS_MASK) {
+            if (bmi270_get_feature_data(&sens_data, 1, self->bmi_dev_) == BMI2_OK) {
+                uint8_t out = sens_data.sens_data.high_g_output;
+                self->OnHighG(out);
+            }
+        }
+        vTaskDelay(pdMS_TO_TICKS(50));
+    }
+}
+
+void Bmi270Manager::LowGTaskImpl(void* arg) {
+    auto* self = static_cast<Bmi270Manager*>(arg);
+    uint16_t int_status = 0;
+    while (true) {
+        bmi2_get_int_status(&int_status, self->bmi_dev_);
+        if (int_status & BMI270_LOW_G_STATUS_MASK) {
+            self->OnLowG();
+        }
+        vTaskDelay(pdMS_TO_TICKS(50));
     }
 }
 
@@ -397,6 +441,38 @@ int8_t Bmi270Manager::ConfigureWristGesture() {
     return BMI2_OK;
 }
 
+int8_t Bmi270Manager::ConfigureHighG() {
+    if (!bmi_dev_) return BMI2_E_NULL_PTR;
+    struct bmi2_sens_config config = { .type = BMI2_HIGH_G };
+    int8_t rslt = bmi270_get_sensor_config(&config, 1, bmi_dev_);
+    if (rslt != BMI2_OK) return rslt;
+    // 可根据需要调整 config.cfg.high_g 的参数
+    rslt = bmi270_set_sensor_config(&config, 1, bmi_dev_);
+    if (rslt != BMI2_OK) return rslt;
+    struct bmi2_sens_int_config sens_int_cfg = { .type = BMI2_HIGH_G, .hw_int_pin = BMI2_INT1 };
+    uint8_t sensor_list[2] = { BMI2_ACCEL, BMI2_HIGH_G };
+    rslt = bmi270_sensor_enable(sensor_list, 2, bmi_dev_);
+    if (rslt != BMI2_OK) return rslt;
+    rslt = bmi270_map_feat_int(&sens_int_cfg, 1, bmi_dev_);
+    return rslt;
+}
+
+int8_t Bmi270Manager::ConfigureLowG() {
+    if (!bmi_dev_) return BMI2_E_NULL_PTR;
+    struct bmi2_sens_config config = { .type = BMI2_LOW_G };
+    int8_t rslt = bmi270_get_sensor_config(&config, 1, bmi_dev_);
+    if (rslt != BMI2_OK) return rslt;
+    // 可根据需要调整 config.cfg.low_g 的参数
+    rslt = bmi270_set_sensor_config(&config, 1, bmi_dev_);
+    if (rslt != BMI2_OK) return rslt;
+    struct bmi2_sens_int_config sens_int_cfg = { .type = BMI2_LOW_G, .hw_int_pin = BMI2_INT2 };
+    uint8_t sensor_list[2] = { BMI2_ACCEL, BMI2_LOW_G };
+    rslt = bmi270_sensor_enable(sensor_list, 2, bmi_dev_);
+    if (rslt != BMI2_OK) return rslt;
+    rslt = bmi270_map_feat_int(&sens_int_cfg, 1, bmi_dev_);
+    return rslt;
+}
+
 int8_t Bmi270Manager::EnableSensors(const uint8_t* sensor_list, uint8_t num) {
     if (!bmi_dev_) {
         ESP_LOGE(TAG, "BMI2 device handle is NULL!");
@@ -411,4 +487,20 @@ int8_t Bmi270Manager::EnableSensors(const uint8_t* sensor_list, uint8_t num) {
 
     ESP_LOGI(TAG, "Sensors enabled successfully");
     return BMI2_OK;
-} 
+}
+
+void Bmi270Manager::OnHighG(uint8_t high_g_out) {
+    if (high_g_callback_) {
+        high_g_callback_(high_g_out);
+        return;
+    }
+    ESP_LOGI(TAG, "High-G detected! Output: 0x%x (default handler)", high_g_out);
+}
+
+void Bmi270Manager::OnLowG() {
+    if (low_g_callback_) {
+        low_g_callback_();
+        return;
+    }
+    ESP_LOGI(TAG, "Low-G detected! (default handler)");
+}

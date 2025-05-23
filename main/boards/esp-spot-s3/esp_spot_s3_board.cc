@@ -20,6 +20,7 @@
 #include "led/circular_strip.h"
 #include "bmi270.h"
 #include "common/common.h"
+#include "bmi270_manager.h"
 
 #define TAG "esp_spot_s3" // 定义日志标签
 
@@ -88,6 +89,7 @@ private:
     bool key_long_pressed = false; // 键长按标志
     int64_t last_key_press_time = 0; // 上次按键时间
     static const int64_t LONG_PRESS_TIMEOUT_US = 5 * 1000000ULL; // 长按超时时间
+    Bmi270Manager bmi270_manager_; // BMI270管理器组件
 
     // Members for Any Motion
     SemaphoreHandle_t any_motion_semaphore_ = NULL;
@@ -128,7 +130,7 @@ private:
 
                 if (int_status & BMI270_ANY_MOT_STATUS_MASK) {
                     ESP_LOGI(TAG, "Any Motion detected! Status: 0x%04X", int_status);
-                    // TODO: Add your Any Motion event handling logic here
+                    self->HandleAnyMotion();
                 } else {
                     ESP_LOGW(TAG, "Unexpected interrupt status: 0x%04X", int_status);
                 }
@@ -193,8 +195,8 @@ private:
         esp_err_t add_isr_ret = gpio_isr_handler_add(I2C_INT_IO, EspSpotS3Bot::class_gpio_isr_edge_handler, (void*)this->any_motion_semaphore_);
         if (add_isr_ret != ESP_OK) {
             ESP_LOGE(TAG, "Failed to add GPIO ISR handler: %s", esp_err_to_name(add_isr_ret));
-            vSemaphoreDelete(this->any_motion_semaphore_);
-            this->any_motion_semaphore_ = NULL;
+                vSemaphoreDelete(this->any_motion_semaphore_);
+                this->any_motion_semaphore_ = NULL;
             return BMI2_E_COM_FAIL;
         }
 
@@ -240,8 +242,8 @@ private:
             if (task_created != pdPASS) {
                 ESP_LOGE(TAG, "Failed to create any_motion_task");
                 this->any_motion_task_handle_ = NULL;
-                vSemaphoreDelete(this->any_motion_semaphore_);
-                this->any_motion_semaphore_ = NULL;
+                    vSemaphoreDelete(this->any_motion_semaphore_);
+                    this->any_motion_semaphore_ = NULL;
                 return BMI2_E_COM_FAIL;
             }
             ESP_LOGI(TAG, "Any Motion task created successfully");
@@ -399,23 +401,20 @@ private:
 
                     ESP_LOGD(TAG, "GYR Raw:  X=%3d Y=%3d Z=%3d", sensor_data.gyr.x, sensor_data.gyr.y, sensor_data.gyr.z);
                     ESP_LOGI(TAG, "GYR (dps): X=%3.2f Y=%3.2f Z=%3.2f", gyr_x, gyr_y, gyr_z);
-                } else {
-                    // ESP_LOGD(TAG, "Gyroscope data not ready (status: 0x%02X)", sensor_data.status);
                 }
 
-                // If you only want to log when *both* are ready, combine the checks:
-                // if ((sensor_data.status & BMI2_DRDY_ACC) && (sensor_data.status & BMI2_DRDY_GYR)) {
-                //    ... process both ...
-                // }
-
-            } else {
-                ESP_LOGE(TAG, "AccelGyroReadTask: bmi2_get_sensor_data failed. BMI2 API Error: %d", rslt);
+                // 如果同时有加速度计和陀螺仪数据，则调用回调
+                if ((sensor_data.status & BMI2_DRDY_ACC) && (sensor_data.status & BMI2_DRDY_GYR)) {
+                    float acc_x = lsb_to_mps2(sensor_data.acc.x, ACCEL_G_RANGE, this->bmi_handle_->resolution);
+                    float acc_y = lsb_to_mps2(sensor_data.acc.y, ACCEL_G_RANGE, this->bmi_handle_->resolution);
+                    float acc_z = lsb_to_mps2(sensor_data.acc.z, ACCEL_G_RANGE, this->bmi_handle_->resolution);
+                    float gyr_x = lsb_to_dps(sensor_data.gyr.x, GYRO_DPS_RANGE, this->bmi_handle_->resolution);
+                    float gyr_y = lsb_to_dps(sensor_data.gyr.y, GYRO_DPS_RANGE, this->bmi_handle_->resolution);
+                    float gyr_z = lsb_to_dps(sensor_data.gyr.z, GYRO_DPS_RANGE, this->bmi_handle_->resolution);
+                    HandleAccelGyroData(acc_x, acc_y, acc_z, gyr_x, gyr_y, gyr_z);
+                }
             }
-
-            // Delay before next read. Adjust based on ODR and application needs.
-            // If ODR is 100Hz, new data is available every 10ms.
-            // Polling slightly less frequently than ODR is fine, e.g., every 50-100ms.
-            vTaskDelay(pdMS_TO_TICKS(100)); // e.g., read 10 times per second
+            vTaskDelay(pdMS_TO_TICKS(100));
         }
     }
 
@@ -460,73 +459,24 @@ private:
         } else {
             ESP_LOGI(TAG, "gesture_task created successfully.");
         }
-
     }
 
     void ImuEventHandlerTask() {
         ESP_LOGI(TAG, "ImuEventHandlerTask started.");
         uint16_t int_status = 0;
         struct bmi2_feat_sensor_data sens_data = { .type = BMI2_WRIST_GESTURE };
-        const char* gesture_str[6] = {
+        const char *gesture_output[6] = {
             "unknown_gesture", "push_arm_down", "pivot_up",
             "wrist_shake_jiggle", "flick_in", "flick_out"
         };
 
-        std::string wake_word="佩奇猪猪，我在逗你呢！";
-        auto* led = static_cast<CircularStrip*>(this->GetLed()); // 获取 LED 对象
-        auto &app = Application::GetInstance(); // 获取应用程序实例
-
         while (true) {
-            // 1) 读取中断状态
             bmi2_get_int_status(&int_status, bmi_handle_);
-            // 2) 如果检测到手势中断
             if (int_status & BMI270_WRIST_GEST_STATUS_MASK) {
-                // 读取手势数据
                 if (bmi270_get_feature_data(&sens_data, 1, bmi_handle_) == BMI2_OK) {
                     int id = sens_data.sens_data.wrist_gesture_output;
-                    ESP_LOGI(TAG, "Detected gesture: %s (ID=%d)", gesture_str[id], id);
-                    if (id >= 0 && id < 6) {
-                        switch (id) {
-                            case 0:
-                                ESP_LOGI(TAG, "Action: Unknown gesture");
-                                led->SetSingleColor(0, {0,   0,   0  });
-                                break;
-                            case 1:
-                                app.ToggleChatState(); // 切换聊天状态
-                                wake_word="佩奇猪猪，我把你抛到空中呢！飞翔的感觉怎么样？啊哈哈";
-                                app.WakeWordInvoke(wake_word);
-                                // ESP_LOGI(TAG, "Action: Push arm down");
-                                // led->SetSingleColor(0, {255, 0,   0  });
-                                break;
-                            case 2:
-                                ESP_LOGI(TAG, "Action: Pivot up");
-                                led->SetSingleColor(0, {0,   255, 0  });
-                                break;
-                            case 3:
-                                // ESP_LOGI(TAG, "Action: Wrist shake jiggle");
-                                app.ToggleChatState(); // 切换聊天状态
-                                wake_word="佩奇猪猪，我正在摇晃你哦！好好玩呢！啊哈哈";
-                                app.WakeWordInvoke(wake_word);
-                                // led->SetSingleColor(0, {0,   0,   255});
-                                break;
-                            case 4:
-                                ESP_LOGI(TAG, "Action: Flick in");
-                                led->SetSingleColor(0, {255, 255, 0  });
-                                break;
-                            case 5:
-                                ESP_LOGI(TAG, "Action: Flick out");
-                                led->SetSingleColor(0, {128, 0,   128});
-                                break;
-                        }
-                    } else {
-                        ESP_LOGW(TAG, "Unknown gesture ID: %d", id);
-                    }
-                } else {
-                    ESP_LOGE(TAG, "ImuEventHandlerTask: failed to read feature data");
+                    HandleWristGesture(id);
                 }
-                // 短暂显示后恢复常亮
-                vTaskDelay(pdMS_TO_TICKS(500));
-                led->SetSingleColor(0, {0, 0,  0});
             }
             vTaskDelay(pdMS_TO_TICKS(100));
         }
@@ -730,9 +680,19 @@ public:
         InitializeI2c();
         InitializeButtons();
         InitializeIot();
-        // bmi270_enable_wrist_gesture();
-        // bmi270_enable_accel_gyro();
-        bmi270_enable_any_motion();
+
+        // 初始化BMI270，启用任意运动和手势识别
+        Bmi270Manager::Config bmi_conf;
+        bmi_conf.features = Bmi270Manager::ANY_MOTION | Bmi270Manager::WRIST_GESTURE | Bmi270Manager::ACCEL_GYRO;
+        bmi_conf.int_pin = I2C_INT_IO;  // 使用config.h中定义的I2C_INT_IO
+        
+        // 设置BMI270设备句柄
+        bmi270_manager_.bmi_dev_ = bmi_handle_;
+        
+        // 初始化BMI270管理器
+        if (!bmi270_manager_.Init(bmi_conf)) {
+            ESP_LOGE(TAG, "Failed to initialize BMI270 manager");
+        }
     }
 
     virtual Led* GetLed() override {
@@ -777,6 +737,40 @@ public:
         charging = gpio_get_level(MCU_VCC_CTL); // 获取充电状态
         ESP_LOGI(TAG, "Battery Level: %d%%, Charging: %s", level, charging ? "Yes" : "No"); // 日志记录电池电量和充电状态
         return true; // 返回成功
+    }
+
+    // 重写Bmi270Manager的回调方法
+    void OnAnyMotion() {
+        ESP_LOGI(TAG, "[EspSpotS3Bot] Any Motion Event: 控制灯光/唤醒词等");
+        auto* led = static_cast<CircularStrip*>(GetLed());
+        if (led) led->SetSingleColor(0, {0,255,0});
+        // 这里可以添加唤醒词、控制电源等
+    }
+
+    void OnWristGesture(int gesture_id) {
+        ESP_LOGI(TAG, "[EspSpotS3Bot] Wrist Gesture Event: %d", gesture_id);
+        auto* led = static_cast<CircularStrip*>(GetLed());
+        if (led) led->SetSingleColor(0, {255,0,0});
+        // 这里可以根据gesture_id做不同的业务逻辑
+    }
+
+    void OnAccelGyroData(float acc_x, float acc_y, float acc_z, float gyr_x, float gyr_y, float gyr_z) {
+        ESP_LOGI(TAG, "[EspSpotS3Bot] AccelGyroData Event: acc_x=%f, acc_y=%f, acc_z=%f, gyr_x=%f, gyr_y=%f, gyr_z=%f",
+                 acc_x, acc_y, acc_z, gyr_x, gyr_y, gyr_z);
+        // 可选：处理加速度/角速度数据
+    }
+
+    // 添加Bmi270Manager的回调转发方法
+    void HandleAnyMotion() {
+        bmi270_manager_.OnAnyMotion();
+    }
+
+    void HandleWristGesture(int gesture_id) {
+        bmi270_manager_.OnWristGesture(gesture_id);
+    }
+
+    void HandleAccelGyroData(float acc_x, float acc_y, float acc_z, float gyr_x, float gyr_y, float gyr_z) {
+        bmi270_manager_.OnAccelGyroData(acc_x, acc_y, acc_z, gyr_x, gyr_y, gyr_z);
     }
 };
 DECLARE_BOARD(EspSpotS3Bot);

@@ -18,59 +18,10 @@
 #include "driver/gpio.h"
 #include "esp_timer.h"
 #include "led/circular_strip.h"
-#include "bmi270.h"
-#include "common/common.h"
+
 #include "bmi270_manager.h"
 
 #define TAG "esp_spot_s3" // 定义日志标签
-
-extern "C" void bmi2_error_codes_print_result(int8_t rslt);
-
-int8_t set_feature_config(struct bmi2_dev *dev) {
-    struct bmi2_sens_config config;
-    struct bmi2_int_pin_config pin_config = { 0 };
-    int8_t rslt;
-
-    // 1. Configure Any Motion parameters
-    config.type = BMI2_ANY_MOTION;
-    rslt = bmi270_get_sensor_config(&config, 1, dev);
-    if (rslt != BMI2_OK) {
-        ESP_LOGE(TAG, "Failed to get Any Motion config: %d", rslt);
-        return rslt;
-    }
-
-    // Set Any Motion parameters
-    config.cfg.any_motion.duration = 0x04;  // 80ms
-    config.cfg.any_motion.threshold = 0x68; // 50mg
-
-    rslt = bmi270_set_sensor_config(&config, 1, dev);
-    if (rslt != BMI2_OK) {
-        ESP_LOGE(TAG, "Failed to set Any Motion config: %d", rslt);
-        return rslt;
-    }
-
-    // 2. Configure interrupt pin
-    rslt = bmi2_get_int_pin_config(&pin_config, dev);
-    if (rslt != BMI2_OK) {
-        ESP_LOGE(TAG, "Failed to get interrupt pin config: %d", rslt);
-        return rslt;
-    }
-
-    pin_config.pin_type = BMI2_INT1;
-    pin_config.pin_cfg[0].output_en = BMI2_INT_OUTPUT_ENABLE;
-    pin_config.pin_cfg[0].lvl = BMI2_INT_ACTIVE_LOW;
-    pin_config.pin_cfg[0].od = BMI2_INT_PUSH_PULL;
-    pin_config.int_latch = BMI2_INT_NON_LATCH;
-
-    rslt = bmi2_set_int_pin_config(&pin_config, dev);
-    if (rslt != BMI2_OK) {
-        ESP_LOGE(TAG, "Failed to set interrupt pin config: %d", rslt);
-        return rslt;
-    }
-
-    ESP_LOGI(TAG, "Any Motion feature configured successfully");
-    return BMI2_OK;
-}
 
 bool button_released_ = false; // 按钮释放标志
 bool shutdown_ready_ = false; // 关机准备标志
@@ -89,398 +40,9 @@ private:
     bool key_long_pressed = false; // 键长按标志
     int64_t last_key_press_time = 0; // 上次按键时间
     static const int64_t LONG_PRESS_TIMEOUT_US = 5 * 1000000ULL; // 长按超时时间
-    Bmi270Manager bmi270_manager_; // BMI270管理器组件
 
-    // Members for Any Motion
-    SemaphoreHandle_t any_motion_semaphore_ = NULL;
-    TaskHandle_t any_motion_task_handle_ = NULL;
-    bool any_motion_isr_service_installed_ = false;
-
-    static void IRAM_ATTR class_gpio_isr_edge_handler(void* arg) {
-        SemaphoreHandle_t semaphore = (SemaphoreHandle_t)arg;
-        BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-
-        if (semaphore != NULL) {
-            xSemaphoreGiveFromISR(semaphore, &xHigherPriorityTaskWoken);
-        }
-
-        if (xHigherPriorityTaskWoken) {
-            portYIELD_FROM_ISR();
-        }
-    }
-
-    static void any_motion_event_handler_task_impl(void *pvParameters) {
-        EspSpotS3Bot *self = static_cast<EspSpotS3Bot*>(pvParameters);
-        struct bmi2_dev *bmi_dev = self->bmi_handle_;
-        uint16_t int_status = 0;
-        int8_t rslt;
-
-        ESP_LOGI(TAG, "Any Motion event handler task started");
-
-        while (true) {
-            if (xSemaphoreTake(self->any_motion_semaphore_, portMAX_DELAY) == pdTRUE) {
-                ESP_LOGD(TAG, "GPIO interrupt received for Any Motion");
-                
-                rslt = bmi2_get_int_status(&int_status, bmi_dev);
-                if (rslt != BMI2_OK) {
-                    ESP_LOGE(TAG, "Failed to get interrupt status: %d", rslt);
-                    vTaskDelay(pdMS_TO_TICKS(100));
-                    continue;
-                }
-
-                if (int_status & BMI270_ANY_MOT_STATUS_MASK) {
-                    ESP_LOGI(TAG, "Any Motion detected! Status: 0x%04X", int_status);
-                    self->HandleAnyMotion();
-                } else {
-                    ESP_LOGW(TAG, "Unexpected interrupt status: 0x%04X", int_status);
-                }
-            }
-        }
-    }
-
-    int8_t bmi270_enable_any_motion() {
-        struct bmi2_dev *bmi_dev = this->bmi_handle_;
-        int8_t rslt = BMI2_OK;
-
-        if (!bmi_dev) {
-            ESP_LOGE(TAG, "BMI2 device handle is NULL!");
-            return BMI2_E_NULL_PTR;
-        }
-
-        // 1. Create semaphore for interrupt handling
-        if (this->any_motion_semaphore_ == NULL) {
-            this->any_motion_semaphore_ = xSemaphoreCreateBinary();
-            if (this->any_motion_semaphore_ == NULL) {
-                ESP_LOGE(TAG, "Failed to create any_motion_semaphore_!");
-                return BMI2_E_COM_FAIL;
-            }
-        } else {
-            xSemaphoreTake(this->any_motion_semaphore_, 0);
-        }
-
-        // 2. Configure GPIO interrupt
-        gpio_config_t io_conf = {};
-        io_conf.intr_type = GPIO_INTR_ANYEDGE;
-        io_conf.pin_bit_mask = (1ULL << I2C_INT_IO);
-        io_conf.mode = GPIO_MODE_INPUT;
-        io_conf.pull_down_en = GPIO_PULLDOWN_ENABLE;
-        io_conf.pull_up_en = GPIO_PULLUP_DISABLE;
-        
-        esp_err_t gpio_ret = gpio_config(&io_conf);
-        if (gpio_ret != ESP_OK) {
-            ESP_LOGE(TAG, "Failed to configure GPIO: %s", esp_err_to_name(gpio_ret));
-            vSemaphoreDelete(this->any_motion_semaphore_);
-            this->any_motion_semaphore_ = NULL;
-            return BMI2_E_COM_FAIL;
-        }
-
-        // 3. Install GPIO ISR service if not already installed
-        if (!this->any_motion_isr_service_installed_) {
-            esp_err_t gpio_isr_ret = gpio_install_isr_service(ESP_INTR_FLAG_LEVEL1);
-            if (gpio_isr_ret == ESP_OK) {
-                this->any_motion_isr_service_installed_ = true;
-            } else if (gpio_isr_ret == ESP_ERR_INVALID_STATE) {
-                ESP_LOGW(TAG, "GPIO ISR service already installed");
-                this->any_motion_isr_service_installed_ = true;
-            } else {
-                ESP_LOGE(TAG, "Failed to install GPIO ISR service: %s", esp_err_to_name(gpio_isr_ret));
-                vSemaphoreDelete(this->any_motion_semaphore_);
-                this->any_motion_semaphore_ = NULL;
-                return BMI2_E_COM_FAIL;
-            }
-        }
-
-        // 4. Add GPIO ISR handler
-        gpio_isr_handler_remove(I2C_INT_IO);
-        esp_err_t add_isr_ret = gpio_isr_handler_add(I2C_INT_IO, EspSpotS3Bot::class_gpio_isr_edge_handler, (void*)this->any_motion_semaphore_);
-        if (add_isr_ret != ESP_OK) {
-            ESP_LOGE(TAG, "Failed to add GPIO ISR handler: %s", esp_err_to_name(add_isr_ret));
-                vSemaphoreDelete(this->any_motion_semaphore_);
-                this->any_motion_semaphore_ = NULL;
-            return BMI2_E_COM_FAIL;
-        }
-
-        // 6. Configure Any Motion feature
-        struct bmi2_sens_int_config sens_int_cfg = { 
-            .type = BMI2_ANY_MOTION, 
-            .hw_int_pin = BMI2_INT1 
-        };
-
-        // 6. Enable accelerometer and gyroscope first
-        uint8_t sensor_list[2] = { BMI2_ACCEL, BMI2_ANY_MOTION };
-        rslt = bmi270_sensor_enable(sensor_list, 2, bmi_dev);
-        if (rslt != BMI2_OK) {
-            ESP_LOGE(TAG, "Failed to enable accelerometer and gyroscope: %d", rslt);
-            return rslt;
-        }
-        ESP_LOGI(TAG, "Accelerometer and gyroscope enabled successfully");
-
-        // 7. Configure Any Motion feature
-        rslt = set_feature_config(bmi_dev);
-        if (rslt != BMI2_OK) {
-            ESP_LOGE(TAG, "Failed to configure Any Motion feature: %d", rslt);
-            return rslt;
-        }
-
-        // 8. Map Any Motion interrupt to INT1
-        rslt = bmi270_map_feat_int(&sens_int_cfg, 1, bmi_dev);
-        if (rslt != BMI2_OK) {
-            ESP_LOGE(TAG, "Failed to map Any Motion interrupt: %d", rslt);
-            return rslt;
-        }
-
-        // 9. Create task for handling Any Motion events
-        if (this->any_motion_task_handle_ == NULL) {
-            BaseType_t task_created = xTaskCreate(
-                EspSpotS3Bot::any_motion_event_handler_task_impl,
-                "any_motion_task",
-                4096,
-                this,
-                5,
-                &this->any_motion_task_handle_
-            );
-            if (task_created != pdPASS) {
-                ESP_LOGE(TAG, "Failed to create any_motion_task");
-                this->any_motion_task_handle_ = NULL;
-                    vSemaphoreDelete(this->any_motion_semaphore_);
-                    this->any_motion_semaphore_ = NULL;
-                return BMI2_E_COM_FAIL;
-            }
-            ESP_LOGI(TAG, "Any Motion task created successfully");
-        }
-
-        ESP_LOGI(TAG, "Any Motion detection enabled successfully");
-        return BMI2_OK;
-    }
-    
-    int8_t set_accel_gyro_config(struct bmi2_dev *dev) {
-        int8_t rslt;
-        struct bmi2_sens_config config[2];
-
-        // Configure Accelerometer
-        config[0].type = BMI2_ACCEL;
-        rslt = bmi2_get_sensor_config(&config[0], 1, dev);
-        if (rslt != BMI2_OK) {
-            ESP_LOGE(TAG, "Failed to get accelerometer config: %d", rslt);
-            return rslt;
-        }
-
-        // Set accelerometer configuration
-        config[0].cfg.acc.odr = BMI2_ACC_ODR_100HZ;  // Output Data Rate
-        config[0].cfg.acc.range = BMI2_ACC_RANGE_2G; // Range (+/- 2G)
-        config[0].cfg.acc.bwp = BMI2_ACC_NORMAL_AVG4; // Bandwidth parameter
-        config[0].cfg.acc.filter_perf = BMI2_PERF_OPT_MODE; // Filter performance mode
-
-        // Configure Gyroscope
-        config[1].type = BMI2_GYRO;
-        rslt = bmi2_get_sensor_config(&config[1], 1, dev);
-        if (rslt != BMI2_OK) {
-            ESP_LOGE(TAG, "Failed to get gyroscope config: %d", rslt);
-            return rslt;
-        }
-
-        // Set gyroscope configuration
-        config[1].cfg.gyr.odr = BMI2_GYR_ODR_100HZ; // Output Data Rate
-        config[1].cfg.gyr.range = BMI2_GYR_RANGE_2000; // Range (+/- 2000 DPS)
-        config[1].cfg.gyr.bwp = BMI2_GYR_NORMAL_MODE; // Bandwidth parameter
-        config[1].cfg.gyr.filter_perf = BMI2_PERF_OPT_MODE; // Filter performance mode
-        config[1].cfg.gyr.noise_perf = BMI2_POWER_OPT_MODE; // Noise performance mode
-
-        // Set the configurations
-        rslt = bmi2_set_sensor_config(config, 2, dev);
-        if (rslt != BMI2_OK) {
-            ESP_LOGE(TAG, "Failed to set sensor configurations: %d", rslt);
-            return rslt;
-        }
-
-        ESP_LOGI(TAG, "Accelerometer and gyroscope configured successfully");
-        return BMI2_OK;
-    }
-
-    float lsb_to_mps2(int16_t val, float g_range, uint8_t bit_width) {
-        // Formula: (val / 2^(bit_width-1)) * g_range * 9.80665
-        // For BMI270, bit_width is typically 16
-        double power_of_2 = 1 << (bit_width - 1);
-        return (val / power_of_2) * g_range * 9.80665f;
-    }
-
-    float lsb_to_dps(int16_t val, float dps_range, uint8_t bit_width) {
-        // Formula: (val / 2^(bit_width-1)) * dps_range
-        // For BMI270, bit_width is typically 16
-        double power_of_2 = 1 << (bit_width - 1);
-        return (val / power_of_2) * dps_range;
-    }
-
-    void bmi270_enable_accel_gyro() {
-        ESP_LOGI(TAG, "bmi270_enable_accel_gyro (low-level espressif2022/bmi270)…");
-
-        // 1) Check if I2C bus and BMI handle are initialized
-        if (!lowlevel_i2c_bus_ || !bmi_handle_) { // Assuming lowlevel_i2c_bus_ is your flag/object for I2C init
-            ESP_LOGE(TAG, "bmi270_enable_accel_gyro failed: lowlevel_i2c_bus_ or bmi_handle_ is not initialized!");
-            return;
-        }
-
-        int8_t rslt;
-
-        // 2) Configure Accelerometer and Gyroscope settings
-        // It's important that set_accel_gyro_config correctly sets ODR, Range, etc.
-        rslt = set_accel_gyro_config(this->bmi_handle_);
-        if (rslt != BMI2_OK) {
-            ESP_LOGE(TAG, "set_accel_gyro_config failed. BMI2 API Error: %d", rslt);
-            // You might want to use bmi2_error_codes_print_result(rslt, bmi_handle_); or similar if available and logs to ESP_LOG
-            return;
-        }
-        ESP_LOGI(TAG, "Accelerometer and Gyroscope configured.");
-
-        // 3) Enable Accelerometer and Gyroscope sensors
-        uint8_t sensor_list[] = { BMI2_ACCEL, BMI2_GYRO };
-        // uint8_t num_sensors = sizeof(sensor_list) / sizeof(sensor_list[0]); // This is 2
-        rslt = bmi2_sensor_enable(sensor_list, 2, this->bmi_handle_);
-        if (rslt != BMI2_OK) {
-            ESP_LOGE(TAG, "bmi2_sensor_enable for Accel/Gyro failed. BMI2 API Error: %d", rslt);
-            return;
-        }
-        ESP_LOGI(TAG, "Accelerometer and Gyroscope sensors enabled.");
-
-        // 4) Create a task to continuously read Accelerometer and Gyroscope data
-        BaseType_t task_created = xTaskCreate(
-            [](void* arg) { static_cast<EspSpotS3Bot*>(arg)->AccelGyroReadTask(); },
-            "accel_gyro_task", // Task name
-            4096,              // Stack size (adjust as needed)
-            this,              // Parameter passed to the task
-            5,                 // Priority
-            NULL               // Task handle (optional)
-        );
-
-        if (task_created != pdPASS) {
-            ESP_LOGE(TAG, "Failed to create accel_gyro_task. Error code: %d", task_created);
-        } else {
-            ESP_LOGI(TAG, "accel_gyro_task created successfully.");
-        }
-    }
-
-    void AccelGyroReadTask() {
-        ESP_LOGI(TAG, "AccelGyroReadTask started.");
-
-        struct bmi2_sens_data sensor_data; // Structure to hold sensor data (accel, gyro, etc.)
-        int8_t rslt;
-
-        // These ranges MUST match the configuration set in set_accel_gyro_config
-        // It's better to fetch these from the config or store them after setting
-        const float ACCEL_G_RANGE = 2.0f;    // e.g., 2G. Corresponds to BMI2_ACC_RANGE_2G
-        const float GYRO_DPS_RANGE = 2000.0f; // e.g., 2000DPS. Corresponds to BMI2_GYR_RANGE_2000DPS
-
-        while (true) {
-            // 1) Get sensor data for accelerometer and gyroscope
-            // This function gets data for all enabled sensors if they are time-synchronized.
-            // If not, you might need to get them separately or check status flags.
-            rslt = bmi2_get_sensor_data(&sensor_data, this->bmi_handle_);
-
-            if (rslt == BMI2_OK) {
-                // 2) Check if new data is available using Data Ready status bits
-                // It's good practice to check these flags.
-                // sensor_data.status contains flags like BMI2_DRDY_ACC, BMI2_DRDY_GYR
-                if (sensor_data.status & BMI2_DRDY_ACC) {
-                    // Convert raw accelerometer data to m/s^2
-                    float acc_x = lsb_to_mps2(sensor_data.acc.x, ACCEL_G_RANGE, this->bmi_handle_->resolution);
-                    float acc_y = lsb_to_mps2(sensor_data.acc.y, ACCEL_G_RANGE, this->bmi_handle_->resolution);
-                    float acc_z = lsb_to_mps2(sensor_data.acc.z, ACCEL_G_RANGE, this->bmi_handle_->resolution);
-
-                    // ESP_LOGD is good for frequent data, ESP_LOGI for less frequent/important updates
-                    ESP_LOGD(TAG, "ACC Raw: X=%3d Y=%3d Z=%3d", sensor_data.acc.x, sensor_data.acc.y, sensor_data.acc.z);
-                    ESP_LOGI(TAG, "ACC (m/s^2): X=%3.2f Y=%3.2f Z=%3.2f", acc_x, acc_y, acc_z);
-                } else {
-                    // ESP_LOGD(TAG, "Accelerometer data not ready (status: 0x%02X)", sensor_data.status);
-                }
-
-                if (sensor_data.status & BMI2_DRDY_GYR) {
-                    // Convert raw gyroscope data to degrees/second
-                    float gyr_x = lsb_to_dps(sensor_data.gyr.x, GYRO_DPS_RANGE, this->bmi_handle_->resolution);
-                    float gyr_y = lsb_to_dps(sensor_data.gyr.y, GYRO_DPS_RANGE, this->bmi_handle_->resolution);
-                    float gyr_z = lsb_to_dps(sensor_data.gyr.z, GYRO_DPS_RANGE, this->bmi_handle_->resolution);
-
-                    ESP_LOGD(TAG, "GYR Raw:  X=%3d Y=%3d Z=%3d", sensor_data.gyr.x, sensor_data.gyr.y, sensor_data.gyr.z);
-                    ESP_LOGI(TAG, "GYR (dps): X=%3.2f Y=%3.2f Z=%3.2f", gyr_x, gyr_y, gyr_z);
-                }
-
-                // 如果同时有加速度计和陀螺仪数据，则调用回调
-                if ((sensor_data.status & BMI2_DRDY_ACC) && (sensor_data.status & BMI2_DRDY_GYR)) {
-                    float acc_x = lsb_to_mps2(sensor_data.acc.x, ACCEL_G_RANGE, this->bmi_handle_->resolution);
-                    float acc_y = lsb_to_mps2(sensor_data.acc.y, ACCEL_G_RANGE, this->bmi_handle_->resolution);
-                    float acc_z = lsb_to_mps2(sensor_data.acc.z, ACCEL_G_RANGE, this->bmi_handle_->resolution);
-                    float gyr_x = lsb_to_dps(sensor_data.gyr.x, GYRO_DPS_RANGE, this->bmi_handle_->resolution);
-                    float gyr_y = lsb_to_dps(sensor_data.gyr.y, GYRO_DPS_RANGE, this->bmi_handle_->resolution);
-                    float gyr_z = lsb_to_dps(sensor_data.gyr.z, GYRO_DPS_RANGE, this->bmi_handle_->resolution);
-                    HandleAccelGyroData(acc_x, acc_y, acc_z, gyr_x, gyr_y, gyr_z);
-                }
-            }
-            vTaskDelay(pdMS_TO_TICKS(100));
-        }
-    }
-
-    void bmi270_enable_wrist_gesture() {
-        ESP_LOGI(TAG, "bmi270_enable_wrist_gesture (low-level espressif2022/bmi270)…");
-
-        // 1) 创建并配置底层 I2C 总线（如果还没创建的话）
-        if (!lowlevel_i2c_bus_ || !bmi_handle_) {
-            ESP_LOGE(TAG, "bmi270_enable_wrist_gesture failed: lowlevel_i2c_bus_ or bmi_handle_ failed!", );
-            return;
-        }
-
-        // 3) 使能相关检测
-        uint8_t sens_list[] = { BMI2_ACCEL, BMI2_WRIST_GESTURE };
-        uint8_t num_sensors = sizeof(sens_list) / sizeof(sens_list[0]); // 正确计算传感器数量
-        bmi2_sensor_enable(sens_list, num_sensors, bmi_handle_);
-        // 4) 配置手势——检测哪只手、灵敏度等
-        struct bmi2_sens_config cfg = { .type = BMI2_WRIST_GESTURE };
-        bmi270_get_sensor_config(&cfg, 1, bmi_handle_);
-        cfg.cfg.wrist_gest.wearable_arm = BMI2_ARM_LEFT;
-        bmi270_set_sensor_config(&cfg, 1, bmi_handle_);
-        // 5) 将手势中断映射到 INT1 引脚
-        struct bmi2_sens_int_config int_cfg = {
-            .type       = BMI2_WRIST_GESTURE,
-            .hw_int_pin = BMI2_INT1
-        };
-
-        esp_err_t err = bmi270_map_feat_int(&int_cfg, 1, this->bmi_handle_);
-        if (err != ESP_OK) {
-            ESP_LOGE(TAG, "bmi270_map_feat_int failed: %s", esp_err_to_name(err));
-            return;
-        }
-
-        ESP_LOGI(TAG, "BMI270 initialized and configured.");
-
-        BaseType_t task_created = xTaskCreate(
-            [](void* arg) { static_cast<EspSpotS3Bot*>(arg)->ImuEventHandlerTask(); },
-            "gesture_task", 4096, this, 5, NULL );
-
-        if (task_created != pdPASS) {
-            ESP_LOGE(TAG, "Failed to create gesture_task. Error code: %d", task_created);
-        } else {
-            ESP_LOGI(TAG, "gesture_task created successfully.");
-        }
-    }
-
-    void ImuEventHandlerTask() {
-        ESP_LOGI(TAG, "ImuEventHandlerTask started.");
-        uint16_t int_status = 0;
-        struct bmi2_feat_sensor_data sens_data = { .type = BMI2_WRIST_GESTURE };
-        const char *gesture_output[6] = {
-            "unknown_gesture", "push_arm_down", "pivot_up",
-            "wrist_shake_jiggle", "flick_in", "flick_out"
-        };
-
-        while (true) {
-            bmi2_get_int_status(&int_status, bmi_handle_);
-            if (int_status & BMI270_WRIST_GEST_STATUS_MASK) {
-                if (bmi270_get_feature_data(&sens_data, 1, bmi_handle_) == BMI2_OK) {
-                    int id = sens_data.sens_data.wrist_gesture_output;
-                    HandleWristGesture(id);
-                }
-            }
-            vTaskDelay(pdMS_TO_TICKS(100));
-        }
-    }
+    // BMI270管理器组件
+    Bmi270Manager bmi270_manager_; 
     
     void InitializeI2c() {
         ESP_LOGI(TAG, "InitializeI2c: Using SDA_PIN=%d, SCL_PIN=%d",
@@ -497,40 +59,8 @@ private:
             .flags = { .enable_internal_pullup = 1 },
         };
         ESP_ERROR_CHECK(i2c_new_master_bus(&i2c_bus_cfg, &i2c_bus_));
-        // —— 底层 bus：给 BMI270 用 ——  
-        {
-            i2c_config_t bus_conf;
-            memset(&bus_conf, 0, sizeof(bus_conf));
-            bus_conf.mode = I2C_MODE_MASTER;
-            bus_conf.sda_io_num = I2C_MASTER_SDA_PIN;
-            bus_conf.sda_pullup_en = GPIO_PULLUP_ENABLE;
-            bus_conf.scl_io_num = I2C_MASTER_SCL_PIN;
-            bus_conf.scl_pullup_en = GPIO_PULLUP_ENABLE;
-            bus_conf.master.clk_speed = I2C_MASTER_FREQ_HZ;
-
-            this->lowlevel_i2c_bus_ = i2c_bus_create(I2C_NUM_0, &bus_conf);
-            if (!this->lowlevel_i2c_bus_) {
-                ESP_LOGE(TAG, "Low-level I2C bus (for BMI270) creation failed!");
-                abort(); 
-            } else {
-                ESP_LOGI(TAG, "Low-level I2C bus (lowlevel_i2c_bus_ for BMI270) created: %p", this->lowlevel_i2c_bus_);
-            }
-        }
-
-        ESP_LOGI(TAG, "bmi270_enable_wrist_gesture: Entry. i2c_bus_ (high-level) handle: %p", this->i2c_bus_);
+        
         ESP_LOGI(TAG, "GetAudioCodec: Entry. i2c_bus_ (high-level) handle before static audio_codec init: %p", this->i2c_bus_);
-
-        // 2) 创建 BMI270 传感器对象
-        bmi270_i2c_config_t i2c_bmi270_conf = {
-            .i2c_handle = lowlevel_i2c_bus_,
-            .i2c_addr = BMI270_I2C_ADDRESS,
-        };
-        esp_err_t err = bmi270_sensor_create(&i2c_bmi270_conf, &bmi_handle_);
-        if (err != ESP_OK || !bmi_handle_) {
-            ESP_LOGE(TAG, "bmi270_sensor_create failed (%d)", err);
-            return;
-        }
-        ESP_LOGI(TAG, "BMI270 sensor handle: %p", bmi_handle_);
     }
     
     void InitializeADC() { // 初始化 ADC
@@ -673,17 +203,42 @@ private:
         ESP_ERROR_CHECK(esp_timer_create(&timer_args, &blink_timer)); // 创建定时器
         ESP_ERROR_CHECK(esp_timer_start_once(blink_timer, LONG_PRESS_TIMEOUT_US)); // 启动定时器
     }
-public:
-    EspSpotS3Bot() : boot_button_(BOOT_BUTTON_GPIO), key_button_(KEY_BUTTON_GPIO, true) {
-        InitializePowerCtl();
-        InitializeADC();
-        InitializeI2c();
-        InitializeButtons();
-        InitializeIot();
+
+    bool InitBMI270Imu() {
+
+        i2c_config_t bus_conf;
+        memset(&bus_conf, 0, sizeof(bus_conf));
+        bus_conf.mode = I2C_MODE_MASTER;
+        bus_conf.sda_io_num = I2C_MASTER_SDA_PIN;
+        bus_conf.sda_pullup_en = GPIO_PULLUP_ENABLE;
+        bus_conf.scl_io_num = I2C_MASTER_SCL_PIN;
+        bus_conf.scl_pullup_en = GPIO_PULLUP_ENABLE;
+        bus_conf.master.clk_speed = I2C_MASTER_FREQ_HZ;
+        this->lowlevel_i2c_bus_ = i2c_bus_create(I2C_NUM_0, &bus_conf);
+        if (!this->lowlevel_i2c_bus_) {
+            ESP_LOGE(TAG, "Low-level I2C bus (for BMI270) creation failed!");
+            abort(); 
+        } else {
+            ESP_LOGI(TAG, "Low-level I2C bus (lowlevel_i2c_bus_ for BMI270) created: %p", this->lowlevel_i2c_bus_);
+        }
+        
+        // 2) 创建 BMI270 传感器对象
+        bmi270_i2c_config_t i2c_bmi270_conf = {
+            .i2c_handle = lowlevel_i2c_bus_,
+            .i2c_addr = BMI270_I2C_ADDRESS,
+        };
+        esp_err_t err = bmi270_sensor_create(&i2c_bmi270_conf, &bmi_handle_);
+        if (err != ESP_OK || !bmi_handle_) {
+            ESP_LOGE(TAG, "bmi270_sensor_create failed (%d)", err);
+            return false;
+        }
+        ESP_LOGI(TAG, "BMI270 sensor handle: %p", bmi_handle_);
 
         // 初始化BMI270，启用任意运动和手势识别
         Bmi270Manager::Config bmi_conf;
-        bmi_conf.features = Bmi270Manager::WRIST_GESTURE | Bmi270Manager::ACCEL_GYRO;
+        // bmi_conf.features = Bmi270Manager::ANY_MOTION;
+        bmi_conf.features = Bmi270Manager::WRIST_GESTURE;
+        // bmi_conf.features = Bmi270Manager::ACCEL_GYRO;
         // bmi_conf.features = Bmi270Manager::ANY_MOTION | Bmi270Manager::WRIST_GESTURE | Bmi270Manager::ACCEL_GYRO;
         bmi_conf.int_pin = I2C_INT_IO;  // 使用config.h中定义的I2C_INT_IO
         
@@ -700,6 +255,21 @@ public:
         // 初始化BMI270管理器
         if (!bmi270_manager_.Init(bmi_conf)) {
             ESP_LOGE(TAG, "Failed to initialize BMI270 manager");
+            return false;
+        }
+        return true;
+    }
+
+public:
+    EspSpotS3Bot() : boot_button_(BOOT_BUTTON_GPIO), key_button_(KEY_BUTTON_GPIO, true) {
+        InitializePowerCtl();
+        InitializeADC();
+        InitializeI2c();
+        InitializeButtons();
+        InitializeIot();
+        if (!InitBMI270Imu()) {
+            ESP_LOGE(TAG, "Failed to initialize IMU");
+            return;
         }
     }
 
@@ -756,10 +326,51 @@ public:
     }
 
     void OnWristGesture(int gesture_id) {
-        ESP_LOGI(TAG, "[EspSpotS3Bot] Wrist Gesture Event: %d", gesture_id);
-        auto* led = static_cast<CircularStrip*>(GetLed());
-        if (led) led->SetSingleColor(0, {255,0,0});
-        // 这里可以根据gesture_id做不同的业务逻辑
+        // 使用手势输出字符串数组来提供更友好的日志输出
+        const char* gesture_name = (gesture_id >= 0 && gesture_id < 6) ? 
+            Bmi270Manager::GESTURE_OUTPUT_STRINGS[gesture_id] : "invalid_gesture";
+        ESP_LOGI(TAG, "[EspSpotS3Bot]  Wrist Gesture detected: %s (id: %d)", gesture_name, gesture_id);
+
+        std::string wake_word="佩奇猪猪，我在逗你呢！";
+        auto* led = static_cast<CircularStrip*>(this->GetLed()); // 获取 LED 对象
+        auto &app = Application::GetInstance(); // 获取应用程序实例
+        switch (gesture_id) {
+            case 0:
+                ESP_LOGI(TAG, "Action: Unknown gesture");
+                led->SetSingleColor(0, {0,   0,   0  });
+                break;
+            case 1: // push_arm_down
+                app.ToggleChatState(); // 切换聊天状态
+                wake_word="佩奇猪猪，我把你抓在我手上用力往下甩起来咯！失重的感觉好玩吗，像不像跳楼机？";
+                app.WakeWordInvoke(wake_word);
+                led->SetSingleColor(0, {255, 0,   0  });
+                break;
+            case 2: // pivot_up
+                app.ToggleChatState(); // 切换聊天状态
+                wake_word="佩奇猪猪，我把你抓在我手上用力往上甩起来咯！超重的感觉好玩吗?";
+                app.WakeWordInvoke(wake_word);
+                led->SetSingleColor(0, {0,   255, 0  });
+                break;
+            case 3: // wrist_shake_jiggle
+                app.ToggleChatState(); // 切换聊天状态
+                wake_word="佩奇猪猪，我正在左右摇晃你呀！摇晃的感觉怎么样，晕不晕哦，哈哈哈哈！";
+                app.WakeWordInvoke(wake_word);
+                led->SetSingleColor(0, {0,   0, 255});
+                break;
+            case 4: // flick_in
+                app.ToggleChatState(); // 切换聊天状态
+                wake_word="佩奇猪猪，我正在快速地把你拉回来哦，不要淘气走掉啦，哈哈哈哈！";
+                app.WakeWordInvoke(wake_word);
+                led->SetSingleColor(0, {255, 255, 0  });
+                break;
+            case 5: // flick_out
+                app.ToggleChatState(); // 切换聊天状态
+                wake_word="佩奇猪猪，我正在快速地把你推出去啦，你怕不怕呀，哈哈哈哈！";
+                app.WakeWordInvoke(wake_word);
+                led->SetSingleColor(0, {128, 0,   128});
+                break;
+        }
+
     }
 
     void OnAccelGyroData(float acc_x, float acc_y, float acc_z, float gyr_x, float gyr_y, float gyr_z) {
@@ -768,17 +379,5 @@ public:
         // 可选：处理加速度/角速度数据
     }
 
-    // 添加Bmi270Manager的回调转发方法
-    void HandleAnyMotion() {
-        bmi270_manager_.OnAnyMotion();
-    }
-
-    void HandleWristGesture(int gesture_id) {
-        bmi270_manager_.OnWristGesture(gesture_id);
-    }
-
-    void HandleAccelGyroData(float acc_x, float acc_y, float acc_z, float gyr_x, float gyr_y, float gyr_z) {
-        bmi270_manager_.OnAccelGyroData(acc_x, acc_y, acc_z, gyr_x, gyr_y, gyr_z);
-    }
 };
 DECLARE_BOARD(EspSpotS3Bot);

@@ -5,6 +5,12 @@
 
 #define TAG "Bmi270Manager"
 
+// 定义手势输出字符串数组
+const char* const Bmi270Manager::GESTURE_OUTPUT_STRINGS[6] = {
+    "unknown_gesture", "push_arm_down", "pivot_up",
+    "wrist_shake_jiggle", "flick_in", "flick_out"
+};
+
 Bmi270Manager::Bmi270Manager() {}
 Bmi270Manager::~Bmi270Manager() {}
 
@@ -69,10 +75,19 @@ bool Bmi270Manager::Init(const Config& config) {
 
     // 5. 根据config.features启用功能
     if (config.features & ACCEL_GYRO) {
-        if (ConfigureAccelGyro() != BMI2_OK) return false;
+        if (ConfigureAccelGyro() != BMI2_OK) {
+            ESP_LOGE(TAG, "Failed to configure AccelGyro");
+            return false;
+        }
         // 启动数据读取任务
-        xTaskCreate(AccelGyroTaskImpl, "bmi270_accel_gyro", 4096, this, 5, &accel_gyro_task_handle_);
-        ESP_LOGI(TAG, "AccelGyro feature enabled successfully");
+        if (accel_gyro_task_handle_ == nullptr) {
+            BaseType_t ret = xTaskCreate(AccelGyroTaskImpl, "bmi270_accel_gyro", 4096, this, 5, &accel_gyro_task_handle_);
+            if (ret != pdPASS) {
+                ESP_LOGE(TAG, "Failed to create AccelGyro task");
+                return false;
+            }
+            ESP_LOGI(TAG, "AccelGyro feature enabled successfully");
+        }
     }
     if (config.features & ANY_MOTION) {
         if (ConfigureAnyMotion() != BMI2_OK) return false;
@@ -102,7 +117,11 @@ void Bmi270Manager::OnWristGesture(int gesture_id) {
         wrist_gesture_callback_(gesture_id);
         return;
     }
-    ESP_LOGI(TAG, "Wrist Gesture detected: %d (default handler)", gesture_id);
+    
+    // 使用手势输出字符串数组来提供更友好的日志输出
+    const char* gesture_name = (gesture_id >= 0 && gesture_id < 6) ? 
+        GESTURE_OUTPUT_STRINGS[gesture_id] : "invalid_gesture";
+    ESP_LOGI(TAG, "Wrist Gesture detected: %s (id: %d)", gesture_name, gesture_id);
 }
 
 void Bmi270Manager::OnAccelGyroData(float acc_x, float acc_y, float acc_z, float gyr_x, float gyr_y, float gyr_z) {
@@ -115,7 +134,6 @@ void Bmi270Manager::OnAccelGyroData(float acc_x, float acc_y, float acc_z, float
 
 struct bmi2_dev* Bmi270Manager::GetBmi2Dev() { return bmi_dev_; }
 
-// 任务实现
 void Bmi270Manager::AnyMotionTaskImpl(void* arg) {
     auto* self = static_cast<Bmi270Manager*>(arg);
     uint16_t int_status = 0;
@@ -133,21 +151,28 @@ void Bmi270Manager::AnyMotionTaskImpl(void* arg) {
 void Bmi270Manager::AccelGyroTaskImpl(void* arg) {
     auto* self = static_cast<Bmi270Manager*>(arg);
     struct bmi2_sens_data sensor_data;
-    const float ACCEL_G_RANGE = 2.0f;
-    const float GYRO_DPS_RANGE = 2000.0f;
+    const float ACCEL_G_RANGE = 2.0f;  // ±2g
+    const float GYRO_DPS_RANGE = 2000.0f;  // ±2000 dps
+    
     while (true) {
         if (bmi2_get_sensor_data(&sensor_data, self->bmi_dev_) == BMI2_OK) {
-            if ((sensor_data.status & BMI2_DRDY_ACC) && (sensor_data.status & BMI2_DRDY_GYR)) {
+            // 检查数据是否有效
+            if (sensor_data.status & BMI2_DRDY_ACC && sensor_data.status & BMI2_DRDY_GYR) {
+                // 转换加速度数据 (从原始值到 m/s²)
                 float acc_x = sensor_data.acc.x * ACCEL_G_RANGE / 32768.0f * 9.80665f;
                 float acc_y = sensor_data.acc.y * ACCEL_G_RANGE / 32768.0f * 9.80665f;
                 float acc_z = sensor_data.acc.z * ACCEL_G_RANGE / 32768.0f * 9.80665f;
+                
+                // 转换陀螺仪数据 (从原始值到 dps)
                 float gyr_x = sensor_data.gyr.x * GYRO_DPS_RANGE / 32768.0f;
                 float gyr_y = sensor_data.gyr.y * GYRO_DPS_RANGE / 32768.0f;
                 float gyr_z = sensor_data.gyr.z * GYRO_DPS_RANGE / 32768.0f;
+                
+                // 调用回调函数
                 self->OnAccelGyroData(acc_x, acc_y, acc_z, gyr_x, gyr_y, gyr_z);
             }
         }
-        vTaskDelay(pdMS_TO_TICKS(100));
+        vTaskDelay(pdMS_TO_TICKS(10)); // 100Hz采样率，10ms延迟
     }
 }
 
@@ -166,6 +191,7 @@ void Bmi270Manager::GestureTaskImpl(void* arg) {
         vTaskDelay(pdMS_TO_TICKS(100));
     }
 }
+
 void IRAM_ATTR Bmi270Manager::GpioIsrHandler(void* arg) {
     auto* self = static_cast<Bmi270Manager*>(arg);
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
@@ -177,8 +203,62 @@ void IRAM_ATTR Bmi270Manager::GpioIsrHandler(void* arg) {
     }
 }
 
-// 配置各功能（略，参考原有实现，需根据实际板子完善）
-int8_t Bmi270Manager::ConfigureAccelGyro() { return BMI2_OK; }
+int8_t Bmi270Manager::ConfigureAccelGyro() {
+    if (!bmi_dev_) {
+        ESP_LOGE(TAG, "BMI2 device handle is NULL!");
+        return BMI2_E_NULL_PTR;
+    }
+
+    int8_t rslt;
+    struct bmi2_sens_config config[2];
+
+    // Configure Accelerometer
+    config[0].type = BMI2_ACCEL;
+    rslt = bmi2_get_sensor_config(&config[0], 1, bmi_dev_);
+    if (rslt != BMI2_OK) {
+        ESP_LOGE(TAG, "Failed to get accelerometer config: %d", rslt);
+        return rslt;
+    }
+
+    // Set accelerometer configuration
+    config[0].cfg.acc.odr = BMI2_ACC_ODR_100HZ;  // Output Data Rate: 100Hz
+    config[0].cfg.acc.range = BMI2_ACC_RANGE_2G; // Range: ±2g
+    config[0].cfg.acc.bwp = BMI2_ACC_NORMAL_AVG4; // Bandwidth parameter
+    config[0].cfg.acc.filter_perf = BMI2_PERF_OPT_MODE; // Filter performance mode
+
+    // Configure Gyroscope
+    config[1].type = BMI2_GYRO;
+    rslt = bmi2_get_sensor_config(&config[1], 1, bmi_dev_);
+    if (rslt != BMI2_OK) {
+        ESP_LOGE(TAG, "Failed to get gyroscope config: %d", rslt);
+        return rslt;
+    }
+
+    // Set gyroscope configuration
+    config[1].cfg.gyr.odr = BMI2_GYR_ODR_100HZ; // Output Data Rate: 100Hz
+    config[1].cfg.gyr.range = BMI2_GYR_RANGE_2000; // Range: ±2000 dps
+    config[1].cfg.gyr.bwp = BMI2_GYR_NORMAL_MODE; // Bandwidth parameter
+    config[1].cfg.gyr.filter_perf = BMI2_PERF_OPT_MODE; // Filter performance mode
+    config[1].cfg.gyr.noise_perf = BMI2_POWER_OPT_MODE; // Noise performance mode
+
+    // Set the configurations
+    rslt = bmi2_set_sensor_config(config, 2, bmi_dev_);
+    if (rslt != BMI2_OK) {
+        ESP_LOGE(TAG, "Failed to set sensor configurations: %d", rslt);
+        return rslt;
+    }
+
+    // Enable accelerometer and gyroscope sensors
+    uint8_t sensor_list[2] = { BMI2_ACCEL, BMI2_GYRO };
+    rslt = bmi2_sensor_enable(sensor_list, 2, bmi_dev_);
+    if (rslt != BMI2_OK) {
+        ESP_LOGE(TAG, "Failed to enable sensors: %d", rslt);
+        return rslt;
+    }
+
+    ESP_LOGI(TAG, "Accelerometer and gyroscope configured successfully");
+    return BMI2_OK;
+}
 
 int8_t Bmi270Manager::ConfigureAnyMotion() {
     if (!bmi_dev_) {
@@ -250,6 +330,85 @@ int8_t Bmi270Manager::ConfigureAnyMotion() {
     return BMI2_OK;
 }
 
-int8_t Bmi270Manager::ConfigureWristGesture() { return BMI2_OK; }
+int8_t Bmi270Manager::ConfigureWristGesture() {
+    if (!bmi_dev_) {
+        ESP_LOGE(TAG, "BMI2 device handle is NULL!");
+        return BMI2_E_NULL_PTR;
+    }
 
-int8_t Bmi270Manager::EnableSensors(const uint8_t* sensor_list, uint8_t num) { return BMI2_OK; } 
+    // 1. 配置手腕手势参数
+    struct bmi2_sens_config config = { .type = BMI2_WRIST_GESTURE };
+    int8_t rslt = bmi270_get_sensor_config(&config, 1, bmi_dev_);
+    if (rslt != BMI2_OK) {
+        ESP_LOGE(TAG, "Failed to get Wrist Gesture config: %d", rslt);
+        return rslt;
+    }
+
+    // 设置手腕手势参数
+    config.cfg.wrist_gest.wearable_arm = BMI2_ARM_LEFT; // 检测左手
+    rslt = bmi270_set_sensor_config(&config, 1, bmi_dev_);
+    if (rslt != BMI2_OK) {
+        ESP_LOGE(TAG, "Failed to set Wrist Gesture config: %d", rslt);
+        return rslt;
+    }
+
+    // 2. 配置中断引脚
+    struct bmi2_int_pin_config pin_config = { 0 };
+    rslt = bmi2_get_int_pin_config(&pin_config, bmi_dev_);
+    if (rslt != BMI2_OK) {
+        ESP_LOGE(TAG, "Failed to get interrupt pin config: %d", rslt);
+        return rslt;
+    }
+
+    pin_config.pin_type = BMI2_INT1;
+    pin_config.pin_cfg[0].output_en = BMI2_INT_OUTPUT_ENABLE;
+    pin_config.pin_cfg[0].lvl = BMI2_INT_ACTIVE_LOW;
+    pin_config.pin_cfg[0].od = BMI2_INT_PUSH_PULL;
+    pin_config.int_latch = BMI2_INT_NON_LATCH;
+
+    rslt = bmi2_set_int_pin_config(&pin_config, bmi_dev_);
+    if (rslt != BMI2_OK) {
+        ESP_LOGE(TAG, "Failed to set interrupt pin config: %d", rslt);
+        return rslt;
+    }
+
+    // 3. 配置手腕手势中断
+    struct bmi2_sens_int_config sens_int_cfg = { 
+        .type = BMI2_WRIST_GESTURE, 
+        .hw_int_pin = BMI2_INT1 
+    };
+
+    // 4. 启用加速度计和手腕手势功能
+    uint8_t sensor_list[2] = { BMI2_ACCEL, BMI2_WRIST_GESTURE };
+    rslt = bmi270_sensor_enable(sensor_list, 2, bmi_dev_);
+    if (rslt != BMI2_OK) {
+        ESP_LOGE(TAG, "Failed to enable accelerometer and Wrist Gesture: %d", rslt);
+        return rslt;
+    }
+
+    // 5. 映射手腕手势中断到INT1
+    rslt = bmi270_map_feat_int(&sens_int_cfg, 1, bmi_dev_);
+    if (rslt != BMI2_OK) {
+        ESP_LOGE(TAG, "Failed to map Wrist Gesture interrupt: %d", rslt);
+        return rslt;
+    }
+
+    ESP_LOGI(TAG, "Wrist Gesture feature configured successfully");
+    return BMI2_OK;
+}
+
+int8_t Bmi270Manager::EnableSensors(const uint8_t* sensor_list, uint8_t num) {
+    if (!bmi_dev_) {
+        ESP_LOGE(TAG, "BMI2 device handle is NULL!");
+        return BMI2_E_NULL_PTR;
+    }
+
+    int8_t rslt = bmi2_sensor_enable(sensor_list, num, bmi_dev_);
+    if (rslt != BMI2_OK) {
+        ESP_LOGE(TAG, "Failed to enable sensors: %d", rslt);
+        return rslt;
+    }
+
+    ESP_LOGI(TAG, "Sensors enabled successfully");
+    return BMI2_OK;
+} 

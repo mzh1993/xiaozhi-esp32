@@ -2,6 +2,7 @@
 #include <stdint.h>
 #include <functional>
 #include "bmi270.h"
+#include "bmi270_legacy.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
@@ -78,11 +79,15 @@ protected:
     static void AnyMotionTaskImpl(void* arg);
     static void AccelGyroTaskImpl(void* arg);
     static void GestureTaskImpl(void* arg);
+    static void HighGTaskImpl(void* arg);
+    static void LowGTaskImpl(void* arg);
     static void IRAM_ATTR GpioIsrHandler(void* arg);
 
     // 配置各功能
     int8_t ConfigureAccelGyro();
     int8_t ConfigureAnyMotion();
     int8_t ConfigureWristGesture();
+    int8_t ConfigureHighG();
+    int8_t ConfigureLowG();
     int8_t EnableSensors(const uint8_t* sensor_list, uint8_t num);
 };

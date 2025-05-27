@@ -40,7 +40,6 @@ private:
     bool key_long_pressed = false; // 键长按标志
     int64_t last_key_press_time = 0; // 上次按键时间
     static const int64_t LONG_PRESS_TIMEOUT_US = 3 * 1000000ULL; // 长按超时时间
-
     // BMI270管理器组件
     Bmi270Manager bmi270_manager_; 
     
@@ -236,7 +235,10 @@ private:
 
         // 初始化BMI270，启用任意运动、手势识别、高g、低g
         Bmi270Manager::Config bmi_conf;
-        bmi_conf.features = Bmi270Manager::WRIST_GESTURE | Bmi270Manager::HIGH_G | Bmi270Manager::LOW_G;
+        // bmi_conf.features = Bmi270Manager::HIGH_G;
+        // bmi_conf.features = Bmi270Manager::LOW_G;
+        bmi_conf.features = Bmi270Manager::WRIST_GESTURE;
+        // bmi_conf.features = Bmi270Manager::WRIST_GESTURE | Bmi270Manager::HIGH_G | Bmi270Manager::LOW_G;
         bmi_conf.int_pin = I2C_INT_IO;  // 使用config.h中定义的I2C_INT_IO
         // 设置BMI270设备句柄
         bmi270_manager_.bmi_dev_ = bmi_handle_;
@@ -246,13 +248,15 @@ private:
         bmi270_manager_.SetAccelGyroCallback([this](float ax, float ay, float az, float gx, float gy, float gz) {
             this->OnAccelGyroData(ax, ay, az, gx, gy, gz);
         });
+        // 设置高g/低g回调，增加详细日志定位问题
         bmi270_manager_.SetHighGCallback([this](uint8_t high_g_out) {
+            ESP_LOGI(TAG, "[EspSpotS3Bot] High-G callback triggered, will call OnHighG");
             this->OnHighG(high_g_out);
         });
         bmi270_manager_.SetLowGCallback([this]() {
+            ESP_LOGI(TAG, "[EspSpotS3Bot] Low-G callback triggered, will call OnLowG");
             this->OnLowG();
         });
-        
         // 初始化BMI270管理器
         if (!bmi270_manager_.Init(bmi_conf)) {
             ESP_LOGE(TAG, "Failed to initialize BMI270 manager");
@@ -318,7 +322,6 @@ public:
         return true; // 返回成功
     }
 
-    // 重写Bmi270Manager的回调方法
     void OnAnyMotion() {
         ESP_LOGI(TAG, "[EspSpotS3Bot] Any Motion Event: 控制灯光/唤醒词等");
         auto* led = static_cast<CircularStrip*>(GetLed());
@@ -380,8 +383,7 @@ public:
         // 可选：处理加速度/角速度数据
     }
 
-    // 新增：高g事件自定义处理
-    void OnHighG(uint8_t high_g_out) override {
+    void OnHighG(uint8_t high_g_out) {
         ESP_LOGI(TAG, "[EspSpotS3Bot] OnHighG: Output=0x%x", high_g_out);
         auto* led = static_cast<CircularStrip*>(GetLed());
         if (led) led->SetSingleColor(0, {255, 128, 0}); // 橙色
@@ -390,8 +392,7 @@ public:
         app.WakeWordInvoke(msg);
     }
 
-    // 新增：低g事件自定义处理
-    void OnLowG() override {
+    void OnLowG() {
         ESP_LOGI(TAG, "[EspSpotS3Bot] OnLowG: Free fall detected!");
         auto* led = static_cast<CircularStrip*>(GetLed());
         if (led) led->SetSingleColor(0, {0, 255, 255}); // 青色

@@ -214,7 +214,7 @@ void Bmi270Manager::HighGTaskImpl(void* arg) {
     struct bmi2_feat_sensor_data sens_data = { .type = BMI2_HIGH_G };
     while (true) {
         bmi2_get_int_status(&int_status, self->bmi_dev_);
-        if (int_status & BMI270_HIGH_G_STATUS_MASK) {
+        if (int_status & BMI270_LEGACY_HIGH_G_STATUS_MASK) {
             if (bmi270_get_feature_data(&sens_data, 1, self->bmi_dev_) == BMI2_OK) {
                 uint8_t out = sens_data.sens_data.high_g_output;
                 self->OnHighG(out);
@@ -229,7 +229,7 @@ void Bmi270Manager::LowGTaskImpl(void* arg) {
     uint16_t int_status = 0;
     while (true) {
         bmi2_get_int_status(&int_status, self->bmi_dev_);
-        if (int_status & BMI270_LOW_G_STATUS_MASK) {
+        if (int_status & BMI270_LEGACY_LOW_G_STATUS_MASK) {
             self->OnLowG();
         }
         vTaskDelay(pdMS_TO_TICKS(50));
@@ -442,34 +442,62 @@ int8_t Bmi270Manager::ConfigureWristGesture() {
 }
 
 int8_t Bmi270Manager::ConfigureHighG() {
-    if (!bmi_dev_) return BMI2_E_NULL_PTR;
-    struct bmi2_sens_config config = { .type = BMI2_HIGH_G };
-    int8_t rslt = bmi270_get_sensor_config(&config, 1, bmi_dev_);
-    if (rslt != BMI2_OK) return rslt;
-    // 可根据需要调整 config.cfg.high_g 的参数
-    rslt = bmi270_set_sensor_config(&config, 1, bmi_dev_);
-    if (rslt != BMI2_OK) return rslt;
-    struct bmi2_sens_int_config sens_int_cfg = { .type = BMI2_HIGH_G, .hw_int_pin = BMI2_INT1 };
+    if (!bmi_dev_) {
+        ESP_LOGE(TAG, "ConfigureHighG: bmi_dev_ is null");
+        return BMI2_E_NULL_PTR;
+    }
+    int8_t rslt = bmi270_legacy_init(bmi_dev_);
+    ESP_LOGI(TAG, "bmi270_legacy_init HIGH_G: %d", rslt);
+
+    // 1. 先使能加速度计和HIGH_G
     uint8_t sensor_list[2] = { BMI2_ACCEL, BMI2_HIGH_G };
-    rslt = bmi270_sensor_enable(sensor_list, 2, bmi_dev_);
+    rslt = bmi270_legacy_sensor_enable(sensor_list, 2, bmi_dev_);
+    ESP_LOGI(TAG, "bmi270_legacy_sensor_enable HIGH_G: %d", rslt);
     if (rslt != BMI2_OK) return rslt;
-    rslt = bmi270_map_feat_int(&sens_int_cfg, 1, bmi_dev_);
+
+    // 2. 配置功能类型
+    struct bmi2_sens_config config[1];
+    config[0].type = BMI2_HIGH_G;
+
+    // 3. 获取默认配置
+    rslt = bmi270_legacy_get_sensor_config(config, 1, bmi_dev_);
+    ESP_LOGI(TAG, "bmi270_legacy_get_sensor_config HIGH_G: %d", rslt);
+    if (rslt != BMI2_OK) return rslt;
+
+    // 6. 中断映射
+    struct bmi2_sens_int_config sens_int_cfg = { .type = BMI2_HIGH_G, .hw_int_pin = BMI2_INT1 };
+    rslt = bmi270_legacy_map_feat_int(&sens_int_cfg, 1, bmi_dev_);
+    ESP_LOGI(TAG, "bmi270_legacy_map_feat_int HIGH_G: %d", rslt);
     return rslt;
 }
 
 int8_t Bmi270Manager::ConfigureLowG() {
-    if (!bmi_dev_) return BMI2_E_NULL_PTR;
-    struct bmi2_sens_config config = { .type = BMI2_LOW_G };
-    int8_t rslt = bmi270_get_sensor_config(&config, 1, bmi_dev_);
-    if (rslt != BMI2_OK) return rslt;
-    // 可根据需要调整 config.cfg.low_g 的参数
-    rslt = bmi270_set_sensor_config(&config, 1, bmi_dev_);
-    if (rslt != BMI2_OK) return rslt;
-    struct bmi2_sens_int_config sens_int_cfg = { .type = BMI2_LOW_G, .hw_int_pin = BMI2_INT2 };
+    if (!bmi_dev_) {
+        ESP_LOGE(TAG, "ConfigureLowG: bmi_dev_ is null");
+        return BMI2_E_NULL_PTR;
+    }
+    int8_t rslt = bmi270_legacy_init(bmi_dev_);
+    ESP_LOGI(TAG, "bmi270_legacy_init LOW_G: %d", rslt);
+
+    // 1. 先使能加速度计和LOW_G
     uint8_t sensor_list[2] = { BMI2_ACCEL, BMI2_LOW_G };
-    rslt = bmi270_sensor_enable(sensor_list, 2, bmi_dev_);
+    rslt = bmi270_legacy_sensor_enable(sensor_list, 2, bmi_dev_);
+    ESP_LOGI(TAG, "bmi270_legacy_sensor_enable LOW_G: %d", rslt);
     if (rslt != BMI2_OK) return rslt;
-    rslt = bmi270_map_feat_int(&sens_int_cfg, 1, bmi_dev_);
+
+    // 2. 配置功能类型
+    struct bmi2_sens_config config[1];
+    config[0].type = BMI2_LOW_G;
+
+    // 3. 获取默认配置
+    rslt = bmi270_legacy_get_sensor_config(config, 1, bmi_dev_);
+    ESP_LOGI(TAG, "bmi270_legacy_get_sensor_config LOW_G: %d", rslt);
+    if (rslt != BMI2_OK) return rslt;
+
+    // 6. 中断映射
+    struct bmi2_sens_int_config sens_int_cfg = { .type = BMI2_LOW_G, .hw_int_pin = BMI2_INT1 };
+    rslt = bmi270_legacy_map_feat_int(&sens_int_cfg, 1, bmi_dev_);
+    ESP_LOGI(TAG, "bmi270_legacy_map_feat_int LOW_G: %d", rslt);
     return rslt;
 }
 

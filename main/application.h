@@ -27,9 +27,14 @@
 #endif
 
 #define SCHEDULE_EVENT (1 << 0)
-#define AUDIO_INPUT_READY_EVENT (1 << 1)
-#define AUDIO_OUTPUT_READY_EVENT (1 << 2)
-#define CHECK_NEW_VERSION_DONE_EVENT (1 << 3)
+#define SEND_AUDIO_EVENT (1 << 1)
+#define CHECK_NEW_VERSION_DONE_EVENT (1 << 2)
+
+enum AecMode {
+    kAecOff,
+    kAecOnDeviceSide,
+    kAecOnServerSide,
+};
 
 enum DeviceState {
     kDeviceStateUnknown,
@@ -45,6 +50,7 @@ enum DeviceState {
 };
 
 #define OPUS_FRAME_DURATION_MS 60
+#define MAX_AUDIO_PACKETS_IN_QUEUE (2400 / OPUS_FRAME_DURATION_MS)
 
 class Application {
 public:
@@ -72,6 +78,9 @@ public:
     void WakeWordInvoke(const std::string& wake_word);
     void PlaySound(const std::string_view& sound);
     bool CanEnterSleepMode();
+    void SendMcpMessage(const std::string& payload);
+    void SetAecMode(AecMode mode);
+    AecMode GetAecMode() const { return aec_mode_; }
 
 private:
     Application();
@@ -89,11 +98,8 @@ private:
     esp_timer_handle_t clock_timer_handle_ = nullptr;
     volatile DeviceState device_state_ = kDeviceStateUnknown;
     ListeningMode listening_mode_ = kListeningModeAutoStop;
-#if CONFIG_USE_DEVICE_AEC || CONFIG_USE_SERVER_AEC
-    bool realtime_chat_enabled_ = true;
-#else
-    bool realtime_chat_enabled_ = false;
-#endif
+    AecMode aec_mode_ = kAecOff;
+
     bool aborted_ = false;
     bool voice_detected_ = false;
     bool busy_decoding_audio_ = false;
@@ -104,9 +110,14 @@ private:
     TaskHandle_t audio_loop_task_handle_ = nullptr;
     BackgroundTask* background_task_ = nullptr;
     std::chrono::steady_clock::time_point last_output_time_;
-    std::atomic<uint32_t> last_output_timestamp_ = 0;
+    std::list<AudioStreamPacket> audio_send_queue_;
     std::list<AudioStreamPacket> audio_decode_queue_;
     std::condition_variable audio_decode_cv_;
+
+    // 新增：用于维护音频包的timestamp队列
+    std::list<uint32_t> timestamp_queue_;
+    std::mutex timestamp_mutex_;
+    std::atomic<uint32_t> last_output_timestamp_ = 0;
 
     std::unique_ptr<OpusEncoderWrapper> opus_encoder_;
     std::unique_ptr<OpusDecoderWrapper> opus_decoder_;

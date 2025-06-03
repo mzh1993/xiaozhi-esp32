@@ -239,7 +239,7 @@ private:
         // bmi_conf.features = Bmi270Manager::LOW_G;
         bmi_conf.features = Bmi270Manager::WRIST_GESTURE;
         // bmi_conf.features = Bmi270Manager::WRIST_GESTURE | Bmi270Manager::HIGH_G | Bmi270Manager::LOW_G;
-        bmi_conf.int_pin = I2C_INT_IO;  // 使用config.h中定义的I2C_INT_IO
+        bmi_conf.int_pin = I2C_INT_IO;  // 使用config.h中定义的 I2C_INT_IO 
         // 设置BMI270设备句柄
         bmi270_manager_.bmi_dev_ = bmi_handle_;
         // 设置回调函数

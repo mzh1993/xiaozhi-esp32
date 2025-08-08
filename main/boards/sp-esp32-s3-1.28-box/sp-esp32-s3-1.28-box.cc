@@ -1,10 +1,9 @@
 #include "wifi_board.h"
-#include "audio_codecs/es8311_audio_codec.h"
+#include "codecs/es8311_audio_codec.h"
 #include "display/lcd_display.h"
 #include "application.h"
 #include "button.h"
 #include "config.h"
-#include "iot/thing_manager.h"
 #include "led/single_led.h"
 #include "assets/lang_config.h"
 #include <wifi_station.h>
@@ -114,14 +113,11 @@ private:
 
         power_save_timer_ = new PowerSaveTimer(-1, 60, 290);
         power_save_timer_->OnEnterSleepMode([this]() {
-            ESP_LOGI(TAG, "Enabling sleep mode");
-            display_->SetChatMessage("system", "");
-            display_->SetEmotion("sleepy");
+            GetDisplay()->SetPowerSaveMode(true);
             GetBacklight()->SetBrightness(1);
         });
         power_save_timer_->OnExitSleepMode([this]() {
-            display_->SetChatMessage("system", "");
-            display_->SetEmotion("neutral");
+            GetDisplay()->SetPowerSaveMode(false);
             GetBacklight()->RestoreBrightness();
         });
         power_save_timer_->OnShutdownRequest([this]() {
@@ -250,6 +246,12 @@ private:
         ESP_ERROR_CHECK(esp_lcd_panel_mirror(panel_handle, true, false));
         ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(panel_handle, true));
 
+        uint8_t data_0x62[] = { 0x18, 0x0D, 0x71, 0xED, 0x70, 0x70, 0x18, 0x0F, 0x71, 0xEF, 0x70, 0x70 };
+        esp_lcd_panel_io_tx_param(io_handle, 0x62, data_0x62, sizeof(data_0x62));
+
+        uint8_t data_0x63[] = { 0x18, 0x11, 0x71, 0xF1, 0x70, 0x70, 0x18, 0x13, 0x71, 0xF3, 0x70, 0x70 };
+        esp_lcd_panel_io_tx_param(io_handle, 0x63, data_0x63, sizeof(data_0x63));
+
         display_ = new CustomLcdDisplay(io_handle, panel_handle,
                                     DISPLAY_WIDTH, DISPLAY_HEIGHT, DISPLAY_OFFSET_X, DISPLAY_OFFSET_Y, DISPLAY_MIRROR_X, DISPLAY_MIRROR_Y, DISPLAY_SWAP_XY);
 
@@ -263,13 +265,6 @@ private:
             }
             app.ToggleChatState();
         });
-    }
-
-    // 物联网初始化，添加对 AI 可见设备
-    void InitializeIot() {
-        auto& thing_manager = iot::ThingManager::GetInstance();
-        thing_manager.AddThing(iot::CreateThing("Speaker"));
-        thing_manager.AddThing(iot::CreateThing("Screen"));
     }
 
 public:
@@ -286,7 +281,6 @@ public:
         InitializeSpi();
         InitializeGc9a01Display();
         InitializeButtons();
-        InitializeIot();
         GetBacklight()->RestoreBrightness();
     }
 

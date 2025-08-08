@@ -3,11 +3,13 @@
 #include "application.h"
 #include "button.h"
 #include "config.h"
-#include "iot/thing_manager.h"
+#include "mcp_server.h"
 #include <wifi_station.h>
 #include <esp_log.h>
 #include <driver/i2c_master.h>
 #include <driver/spi_common.h>
+#include <esp_wifi.h>
+#include <esp_event.h>
 
 #include "display/lcd_display.h"
 #include <esp_lcd_panel_vendor.h>
@@ -19,6 +21,14 @@
 #include "anim_player.h"
 #include "emoji_display.h"
 #include "servo_dog_ctrl.h"
+#include "led_strip.h"
+#include "driver/rmt_tx.h"
+
+#include "sdkconfig.h"
+
+#ifdef CONFIG_ESP_HI_WEB_CONTROL_ENABLED
+#include "esp_hi_web_control.h"
+#endif //CONFIG_ESP_HI_WEB_CONTROL_ENABLED
 
 #define TAG "ESP_HI"
 
@@ -43,12 +53,63 @@ static const ili9341_lcd_init_cmd_t vendor_specific_init[] = {
     {0x2C, NULL, 0, 0},     // Memory write
 };
 
+static const led_strip_config_t bsp_strip_config = {
+    .strip_gpio_num = GPIO_NUM_8,
+    .max_leds = 4,
+    .led_model = LED_MODEL_WS2812,
+    .flags = {
+        .invert_out = false
+    }
+};
+
+static const led_strip_rmt_config_t bsp_rmt_config = {
+    .clk_src = RMT_CLK_SRC_DEFAULT,
+    .resolution_hz = 10 * 1000 * 1000,
+    .flags = {
+        .with_dma = false
+    }
+};
+
 class EspHi : public WifiBoard {
 private:
     Button boot_button_;
     Button audio_wake_button_;
     Button move_wake_button_;
     anim::EmojiWidget* display_ = nullptr;
+    bool web_server_initialized_ = false;
+    led_strip_handle_t led_strip_;
+    bool led_on_ = false;
+
+#ifdef CONFIG_ESP_HI_WEB_CONTROL_ENABLED
+    static void wifi_event_handler(void* arg, esp_event_base_t event_base,
+                                 int32_t event_id, void* event_data)
+    {
+        if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_CONNECTED) {
+
+            xTaskCreate(
+                [](void* arg) {
+                    EspHi* instance = static_cast<EspHi*>(arg);
+                    
+                    vTaskDelay(5000 / portTICK_PERIOD_MS);
+
+                    if (!instance->web_server_initialized_) {
+                        ESP_LOGI(TAG, "WiFi connected, init web control server");
+                        esp_err_t err = esp_hi_web_control_server_init();
+                        if (err != ESP_OK) {
+                            ESP_LOGE(TAG, "Failed to initialize web control server: %d", err);
+                        } else {
+                            ESP_LOGI(TAG, "Web control server initialized");
+                            instance->web_server_initialized_ = true;
+                        }
+                    }
+
+                    vTaskDelete(NULL);
+                },
+                "web_server_init",
+                1024 * 10, arg, 5, nullptr);
+        }
+    }
+#endif //CONFIG_ESP_HI_WEB_CONTROL_ENABLED
 
     void HandleMoveWakePressDown(int64_t current_time, int64_t &last_trigger_time, int &gesture_state)
     {
@@ -131,14 +192,39 @@ private:
             HandleMoveWakePressUp(current_time, last_trigger_time, gesture_state);
         });
     }
+    
+    void InitializeLed() {
+        ESP_LOGI(TAG, "BLINK_GPIO setting %d", bsp_strip_config.strip_gpio_num);
+
+        ESP_ERROR_CHECK(led_strip_new_rmt_device(&bsp_strip_config, &bsp_rmt_config, &led_strip_));
+        led_strip_set_pixel(led_strip_, 0, 0x00, 0x00, 0x00);
+        led_strip_set_pixel(led_strip_, 1, 0x00, 0x00, 0x00);
+        led_strip_set_pixel(led_strip_, 2, 0x00, 0x00, 0x00);
+        led_strip_set_pixel(led_strip_, 3, 0x00, 0x00, 0x00);
+        led_strip_refresh(led_strip_);
+    }
+
+    esp_err_t SetLedColor(uint8_t r, uint8_t g, uint8_t b) {
+        esp_err_t ret = ESP_OK;
+
+        ret |= led_strip_set_pixel(led_strip_, 0, r, g, b);
+        ret |= led_strip_set_pixel(led_strip_, 1, r, g, b);
+        ret |= led_strip_set_pixel(led_strip_, 2, r, g, b);
+        ret |= led_strip_set_pixel(led_strip_, 3, r, g, b);
+        ret |= led_strip_refresh(led_strip_);
+        return ret;
+    }
 
     void InitializeIot()
     {
         ESP_LOGI(TAG, "Initialize Iot");
-        auto &thing_manager = iot::ThingManager::GetInstance();
-        thing_manager.AddThing(iot::CreateThing("DogLight"));
-        thing_manager.AddThing(iot::CreateThing("DogAction_basic"));
-        thing_manager.AddThing(iot::CreateThing("DogAction_extra"));
+        InitializeLed();
+        SetLedColor(0x00, 0x00, 0x00);
+
+#ifdef CONFIG_ESP_HI_WEB_CONTROL_ENABLED
+        ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_STA_CONNECTED,
+                                                 &wifi_event_handler, this));
+#endif //CONFIG_ESP_HI_WEB_CONTROL_ENABLED
     }
 
     void InitializeSpi()
@@ -209,16 +295,106 @@ private:
 #endif
     }
 
+    void InitializeTools()
+    {
+        auto& mcp_server = McpServer::GetInstance();
+        
+        // 基础动作控制
+        mcp_server.AddTool("self.dog.basic_control", "机器人的基础动作。机器人可以做以下基础动作：\n"
+            "forward: 向前移动\nbackward: 向后移动\nturn_left: 向左转\nturn_right: 向右转\nstop: 立即停止当前动作", 
+            PropertyList({
+                Property("action", kPropertyTypeString),
+            }), [this](const PropertyList& properties) -> ReturnValue {
+                const std::string& action = properties["action"].value<std::string>();
+                if (action == "forward") {
+                    servo_dog_ctrl_send(DOG_STATE_FORWARD, NULL);
+                } else if (action == "backward") {
+                    servo_dog_ctrl_send(DOG_STATE_BACKWARD, NULL);
+                } else if (action == "turn_left") {
+                    servo_dog_ctrl_send(DOG_STATE_TURN_LEFT, NULL);
+                } else if (action == "turn_right") {
+                    servo_dog_ctrl_send(DOG_STATE_TURN_RIGHT, NULL);
+                } else if (action == "stop") {
+                    servo_dog_ctrl_send(DOG_STATE_IDLE, NULL);
+                } else {
+                    return false;
+                }
+                return true;
+            });
+        
+        // 扩展动作控制
+        mcp_server.AddTool("self.dog.advanced_control", "机器人的扩展动作。机器人可以做以下扩展动作：\n"
+            "sway_back_forth: 前后摇摆\nlay_down: 趴下\nsway: 左右摇摆\nretract_legs: 收回腿部\n"
+            "shake_hand: 握手\nshake_back_legs: 伸懒腰\njump_forward: 向前跳跃", 
+            PropertyList({
+                Property("action", kPropertyTypeString),
+            }), [this](const PropertyList& properties) -> ReturnValue {
+                const std::string& action = properties["action"].value<std::string>();
+                if (action == "sway_back_forth") {
+                    servo_dog_ctrl_send(DOG_STATE_SWAY_BACK_FORTH, NULL);
+                } else if (action == "lay_down") {
+                    servo_dog_ctrl_send(DOG_STATE_LAY_DOWN, NULL);
+                } else if (action == "sway") {
+                    dog_action_args_t args = {
+                        .repeat_count = 4,
+                    };
+                    servo_dog_ctrl_send(DOG_STATE_SWAY, &args);
+                } else if (action == "retract_legs") {
+                    servo_dog_ctrl_send(DOG_STATE_RETRACT_LEGS, NULL);
+                } else if (action == "shake_hand") {
+                    servo_dog_ctrl_send(DOG_STATE_SHAKE_HAND, NULL);
+                } else if (action == "shake_back_legs") {
+                    servo_dog_ctrl_send(DOG_STATE_SHAKE_BACK_LEGS, NULL);
+                } else if (action == "jump_forward") {
+                    servo_dog_ctrl_send(DOG_STATE_JUMP_FORWARD, NULL);
+                } else {
+                    return false;
+                }
+                return true;
+            });
+
+        // 灯光控制
+        mcp_server.AddTool("self.light.get_power", "获取灯是否打开", PropertyList(), [this](const PropertyList& properties) -> ReturnValue {
+            return led_on_;
+        });
+
+        mcp_server.AddTool("self.light.turn_on", "打开灯", PropertyList(), [this](const PropertyList& properties) -> ReturnValue {
+            SetLedColor(0xFF, 0xFF, 0xFF);
+            led_on_ = true;
+            return true;
+        });
+
+        mcp_server.AddTool("self.light.turn_off", "关闭灯", PropertyList(), [this](const PropertyList& properties) -> ReturnValue {
+            SetLedColor(0x00, 0x00, 0x00);
+            led_on_ = false;
+            return true;
+        });
+
+        mcp_server.AddTool("self.light.set_rgb", "设置RGB颜色", PropertyList({
+            Property("r", kPropertyTypeInteger, 0, 255),
+            Property("g", kPropertyTypeInteger, 0, 255),
+            Property("b", kPropertyTypeInteger, 0, 255)
+        }), [this](const PropertyList& properties) -> ReturnValue {
+            int r = properties["r"].value<int>();
+            int g = properties["g"].value<int>();
+            int b = properties["b"].value<int>();
+            
+            led_on_ = true;
+            SetLedColor(r, g, b);
+            return true;
+        });
+    }
+
 public:
     EspHi() : boot_button_(BOOT_BUTTON_GPIO),
         audio_wake_button_(AUDIO_WAKE_BUTTON_GPIO),
         move_wake_button_(MOVE_WAKE_BUTTON_GPIO)
     {
-
         InitializeButtons();
         InitializeIot();
         InitializeSpi();
         InitializeLcdDisplay();
+        InitializeTools();
     }
 
     virtual AudioCodec* GetAudioCodec() override

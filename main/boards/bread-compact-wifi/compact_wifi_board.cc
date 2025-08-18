@@ -7,6 +7,7 @@
 #include "config.h"
 #include "mcp_server.h"
 #include "lamp_controller.h"
+#include "fan_controller.h"
 #include "led/single_led.h"
 #include "assets/lang_config.h"
 
@@ -154,6 +155,7 @@ private:
     // 物联网初始化，逐步迁移到 MCP 协议
     void InitializeTools() {
         static LampController lamp(LAMP_GPIO);
+        static FanController fan(FAN_GPIO);  // 添加风扇控制器  
     }
 
 public:

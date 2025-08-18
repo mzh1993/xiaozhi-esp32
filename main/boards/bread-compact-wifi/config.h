@@ -56,4 +56,7 @@
 // A MCP Test: Control a lamp
 #define LAMP_GPIO GPIO_NUM_18
 
+// Fan control GPIO
+#define FAN_GPIO GPIO_NUM_17
+
 #endif // _BOARD_CONFIG_H_

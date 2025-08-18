@@ -57,6 +57,6 @@
 #define LAMP_GPIO GPIO_NUM_18
 
 // Fan control GPIO
-#define FAN_GPIO GPIO_NUM_17
+#define FAN_GPIO GPIO_NUM_21
 
 #endif // _BOARD_CONFIG_H_

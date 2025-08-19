@@ -34,6 +34,11 @@
 #define VOLUME_UP_BUTTON_GPIO   GPIO_NUM_40
 #define VOLUME_DOWN_BUTTON_GPIO GPIO_NUM_39
 
+// 触摸按钮通道定义 - 新增玩具触摸按键
+#define TOUCH_CHANNEL_HEAD      (3)   // 玩具头部触摸
+#define TOUCH_CHANNEL_HAND      (9)   // 玩具手部触摸
+#define TOUCH_CHANNEL_BELLY     (13)  // 玩具肚子触摸
+
 #define DISPLAY_SDA_PIN GPIO_NUM_41
 #define DISPLAY_SCL_PIN GPIO_NUM_42
 #define DISPLAY_WIDTH   128

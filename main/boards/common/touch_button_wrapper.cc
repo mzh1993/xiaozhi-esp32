@@ -1,18 +1,14 @@
 #include "touch_button_wrapper.h"
-
 #include <esp_log.h>
-#include <cassert>
 
 // 包含必要的头文件
 extern "C" {
     #include "iot_button.h"
     #include "button_types.h"
-    #include "touch_button.h"  // 这是组件的头文件，不是我们的
+    #include "touch_button.h"
     #include "touch_button_sensor.h"
-    #include "touch_sensor_lowlevel.h"  // 用于低层触摸传感器初始化
+    #include "touch_sensor_lowlevel.h"
 }
-
-// 移除类型转换宏，直接使用正确的类型
 
 #define TAG "TouchButtonWrapper"
 
@@ -20,7 +16,7 @@ extern "C" {
 bool TouchButtonWrapper::touch_sensor_initialized_ = false;
 
 TouchButtonWrapper::TouchButtonWrapper(int32_t touch_channel, float threshold, uint16_t long_press_time, uint16_t short_press_time) 
-    : touch_channel_(touch_channel) {
+    : touch_channel_(touch_channel), threshold_(threshold), long_press_time_(long_press_time), short_press_time_(short_press_time) {
     
     if (touch_channel < 0) {
         return;
@@ -33,26 +29,8 @@ TouchButtonWrapper::TouchButtonWrapper(int32_t touch_channel, float threshold, u
         return;  // 暂时不创建按钮，等待后续初始化
     }
 
-    // 使用简化的初始化方式
-    button_config_t btn_config = {};
-    btn_config.short_press_time = short_press_time;
-    btn_config.long_press_time = long_press_time;
-
-    button_touch_config_t touch_config = {};
-    touch_config.touch_channel = touch_channel;
-    touch_config.channel_threshold = threshold;
-    touch_config.skip_lowlevel_init = true;  // 所有按钮都跳过低层初始化，因为我们已经预先初始化了
-
-    ESP_LOGI(TAG, "Creating touch button - Channel: %ld, Threshold: %.2f, SkipInit: true", 
-             touch_channel, threshold);
-
-    esp_err_t ret = iot_button_new_touch_button_device(&btn_config, &touch_config, &button_handle_);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to create touch button for channel %ld, error: %s", touch_channel, esp_err_to_name(ret));
-        button_handle_ = nullptr;
-    } else {
-        ESP_LOGI(TAG, "Touch button created successfully for channel %ld with threshold %.2f", touch_channel, threshold);
-    }
+    // 如果已初始化，直接创建按钮
+    CreateButton();
 }
 
 void TouchButtonWrapper::CreateButton() {
@@ -66,25 +44,24 @@ void TouchButtonWrapper::CreateButton() {
         return;
     }
 
-    // 使用简化的初始化方式
     button_config_t btn_config = {};
-    btn_config.short_press_time = 300;  // 默认值
-    btn_config.long_press_time = 2000;  // 默认值
+    btn_config.short_press_time = short_press_time_;
+    btn_config.long_press_time = long_press_time_;
 
     button_touch_config_t touch_config = {};
     touch_config.touch_channel = touch_channel_;
-    touch_config.channel_threshold = 0.10f;  // 默认阈值
-    touch_config.skip_lowlevel_init = true;  // 跳过低层初始化
+    touch_config.channel_threshold = threshold_;
+    touch_config.skip_lowlevel_init = true;
 
     ESP_LOGI(TAG, "Creating touch button - Channel: %ld, Threshold: %.2f, SkipInit: true", 
-             touch_channel_, touch_config.channel_threshold);
+             touch_channel_, threshold_);
 
     esp_err_t ret = iot_button_new_touch_button_device(&btn_config, &touch_config, &button_handle_);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to create touch button for channel %ld, error: %s", touch_channel_, esp_err_to_name(ret));
         button_handle_ = nullptr;
     } else {
-        ESP_LOGI(TAG, "Touch button created successfully for channel %ld with threshold %.2f", touch_channel_, touch_config.channel_threshold);
+        ESP_LOGI(TAG, "Touch button created successfully for channel %ld with threshold %.2f", touch_channel_, threshold_);
     }
 }
 
@@ -223,9 +200,4 @@ void TouchButtonWrapper::StartTouchSensor() {
     ESP_LOGI(TAG, "Starting touch sensor lowlevel system");
     touch_sensor_lowlevel_start();
     ESP_LOGI(TAG, "Touch sensor lowlevel system started");
-}
-
-// 静态方法：预先初始化所有触摸通道
-void TouchButtonWrapper::PreInitializeAllChannels(const uint32_t* channel_list, int channel_count) {
-    InitializeTouchSensor(channel_list, channel_count);
 }

@@ -23,7 +23,6 @@ public:
     // 静态方法用于初始化触摸传感器
     static void InitializeTouchSensor(const uint32_t* channel_list, int channel_count);
     static void StartTouchSensor();
-    static void PreInitializeAllChannels(const uint32_t* channel_list, int channel_count);
 
 private:
     // 静态标志，跟踪是否已经初始化
@@ -31,6 +30,9 @@ private:
 
 protected:
     int32_t touch_channel_;
+    float threshold_;
+    uint16_t long_press_time_;
+    uint16_t short_press_time_;
     button_handle_t button_handle_ = nullptr;
 
     std::function<void()> on_press_down_;

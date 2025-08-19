@@ -21,6 +21,7 @@ dependencies:
   espressif/esp_codec_dev: ~1.3.6
   espressif/esp-sr: ~2.1.4
   espressif/button: ~4.1.3
+  espressif/touch_button: ^0.1.1
   espressif/knob: ^1.0.0
   espressif/esp32-camera: ^2.0.15
   espressif/esp_lcd_touch_ft5x06: ~1.0.7

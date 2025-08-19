@@ -4,6 +4,7 @@
 #include "system_reset.h"
 #include "application.h"
 #include "button.h"
+#include "touch_button_wrapper.h"
 #include "config.h"
 #include "mcp_server.h"
 #include "lamp_controller.h"
@@ -33,9 +34,14 @@ private:
     esp_lcd_panel_handle_t panel_ = nullptr;
     Display* display_ = nullptr;
     Button boot_button_;
-    Button touch_button_;
-    Button volume_up_button_;
-    Button volume_down_button_;
+    Button touch_button_;           // 保留原来的实体按键
+    Button volume_up_button_;       // 保留原来的实体按键
+    Button volume_down_button_;     // 保留原来的实体按键
+    
+    // 新增玩具触摸按键
+    TouchButtonWrapper head_touch_button_;
+    TouchButtonWrapper hand_touch_button_;
+    TouchButtonWrapper belly_touch_button_;
 
     void InitializeDisplayI2c() {
         i2c_master_bus_config_t bus_config = {
@@ -106,6 +112,21 @@ private:
             {&font_puhui_14_1, &font_awesome_14_1});
     }
 
+    void InitializeTouchSensor() {
+        // 初始化触摸传感器 - 传入所有需要的通道
+        uint32_t touch_channels[] = {TOUCH_CHANNEL_HEAD, TOUCH_CHANNEL_HAND, TOUCH_CHANNEL_BELLY};
+        int channel_count = sizeof(touch_channels) / sizeof(touch_channels[0]);
+        TouchButtonWrapper::InitializeTouchSensor(touch_channels, channel_count);
+        TouchButtonWrapper::StartTouchSensor();
+        
+        // 触摸传感器初始化完成后，创建所有按钮
+        head_touch_button_.CreateButton();
+        hand_touch_button_.CreateButton();
+        belly_touch_button_.CreateButton();
+        
+        ESP_LOGI(TAG, "Touch sensor initialized for toy touch buttons");
+    }
+
     void InitializeButtons() {
         boot_button_.OnClick([this]() {
             auto& app = Application::GetInstance();
@@ -114,14 +135,19 @@ private:
             }
             app.ToggleChatState();
         });
+        
+        // 保留原来的实体按键事件处理
         touch_button_.OnPressDown([this]() {
+            ESP_LOGI(TAG, "Touch button pressed down");
             Application::GetInstance().StartListening();
         });
         touch_button_.OnPressUp([this]() {
+            ESP_LOGI(TAG, "Touch button pressed up");
             Application::GetInstance().StopListening();
         });
 
         volume_up_button_.OnClick([this]() {
+            ESP_LOGI(TAG, "Volume up button clicked");
             auto codec = GetAudioCodec();
             auto volume = codec->output_volume() + 10;
             if (volume > 100) {
@@ -132,11 +158,13 @@ private:
         });
 
         volume_up_button_.OnLongPress([this]() {
+            ESP_LOGI(TAG, "Volume up button long pressed");
             GetAudioCodec()->SetOutputVolume(100);
             GetDisplay()->ShowNotification(Lang::Strings::MAX_VOLUME);
         });
 
         volume_down_button_.OnClick([this]() {
+            ESP_LOGI(TAG, "Volume down button clicked");
             auto codec = GetAudioCodec();
             auto volume = codec->output_volume() - 10;
             if (volume < 0) {
@@ -147,8 +175,46 @@ private:
         });
 
         volume_down_button_.OnLongPress([this]() {
+            ESP_LOGI(TAG, "Volume down button long pressed");
             GetAudioCodec()->SetOutputVolume(0);
             GetDisplay()->ShowNotification(Lang::Strings::MUTED);
+        });
+        
+        // 新增玩具触摸按键事件处理
+        head_touch_button_.OnClick([this]() {
+            ESP_LOGI(TAG, "Head touch button clicked");
+            GetDisplay()->ShowNotification("摸摸头~");
+            // 可以在这里添加头部触摸的特定功能
+        });
+        
+        head_touch_button_.OnLongPress([this]() {
+            ESP_LOGI(TAG, "Head touch button long pressed");
+            GetDisplay()->ShowNotification("长时间摸头~");
+            // 可以在这里添加长时间摸头的特定功能
+        });
+        
+        hand_touch_button_.OnClick([this]() {
+            ESP_LOGI(TAG, "Hand touch button clicked");
+            GetDisplay()->ShowNotification("握手手~");
+            // 可以在这里添加手部触摸的特定功能
+        });
+        
+        hand_touch_button_.OnLongPress([this]() {
+            ESP_LOGI(TAG, "Hand touch button long pressed");
+            GetDisplay()->ShowNotification("长时间握手~");
+            // 可以在这里添加长时间握手的特定功能
+        });
+        
+        belly_touch_button_.OnClick([this]() {
+            ESP_LOGI(TAG, "Belly touch button clicked");
+            GetDisplay()->ShowNotification("摸摸肚子~");
+            // 可以在这里添加肚子触摸的特定功能
+        });
+        
+        belly_touch_button_.OnLongPress([this]() {
+            ESP_LOGI(TAG, "Belly touch button long pressed");
+            GetDisplay()->ShowNotification("长时间摸肚子~");
+            // 可以在这里添加长时间摸肚子的特定功能
         });
     }
 
@@ -161,11 +227,16 @@ private:
 public:
     CompactWifiBoard() :
         boot_button_(BOOT_BUTTON_GPIO),
-        touch_button_(TOUCH_BUTTON_GPIO),
-        volume_up_button_(VOLUME_UP_BUTTON_GPIO),
-        volume_down_button_(VOLUME_DOWN_BUTTON_GPIO) {
+        touch_button_(TOUCH_BUTTON_GPIO),           // 保留原来的实体按键
+        volume_up_button_(VOLUME_UP_BUTTON_GPIO),   // 保留原来的实体按键
+        volume_down_button_(VOLUME_DOWN_BUTTON_GPIO), // 保留原来的实体按键
+        head_touch_button_(TOUCH_CHANNEL_HEAD, 0.10f),    // 新增玩具头部触摸，降低阈值提高灵敏度
+        hand_touch_button_(TOUCH_CHANNEL_HAND, 0.10f),    // 新增玩具手部触摸，降低阈值提高灵敏度
+        belly_touch_button_(TOUCH_CHANNEL_BELLY, 0.10f) { // 新增玩具肚子触摸，降低阈值提高灵敏度
+        
         InitializeDisplayI2c();
         InitializeSsd1306Display();
+        InitializeTouchSensor();  // 先初始化触摸传感器
         InitializeButtons();
         InitializeTools();
     }

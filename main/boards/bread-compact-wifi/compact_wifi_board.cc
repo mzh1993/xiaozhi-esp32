@@ -34,10 +34,10 @@ private:
     esp_lcd_panel_handle_t panel_ = nullptr;
     Display* display_ = nullptr;
     Button boot_button_;
-    Button touch_button_;           // 保留原来的实体按键
-    Button volume_up_button_;       // 保留原来的实体按键
-    Button volume_down_button_;     // 保留原来的实体按键
-    
+    Button touch_button_;           
+    Button volume_up_button_;       
+    Button volume_down_button_;     
+
     // 新增玩具触摸按键
     TouchButtonWrapper head_touch_button_;
     TouchButtonWrapper hand_touch_button_;

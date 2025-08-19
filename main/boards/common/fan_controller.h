@@ -72,9 +72,9 @@ private:
             for (int i = 0; i < clicks_needed; i++) {
                 // 模拟按键按下
                 gpio_set_level(gpio_num_, 1);
-                vTaskDelay(pdMS_TO_TICKS(50));  // 按下50ms
+                vTaskDelay(pdMS_TO_TICKS(200));  // 按下50ms
                 gpio_set_level(gpio_num_, 0);
-                vTaskDelay(pdMS_TO_TICKS(100)); // 释放100ms，确保芯片识别
+                vTaskDelay(pdMS_TO_TICKS(400)); // 释放100ms，确保芯片识别
             }
         }
         

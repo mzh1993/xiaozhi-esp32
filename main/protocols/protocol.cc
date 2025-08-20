@@ -103,13 +103,13 @@ bool Protocol::IsTimeout() const {
 }
 
 /**
- * 发送触摸事件消息
- * @param message 触摸事件消息
+ * 发送事件消息
+ * @param message 事件消息
  * 
- * 作用：通过复用listen消息类型发送触摸事件消息给服务器
- * 触摸事件被标识为特殊的监听模式，服务器可以响应触摸交互
+ * 作用：通过复用listen消息类型发送事件消息给服务器
+ * 事件被标识为特殊的监听模式，服务器可以响应触摸交互
  */
-void Protocol::SendTouchEvent(const std::string& message) {
+void Protocol::SendMessage(const std::string& message) {
     // 构造 JSON 消息，包含 session_id、类型和状态
     std::string json = "{\"session_id\":\"" + session_id_ + 
     "\",\"type\":\"listen\",\"state\":\"detect\",\"text\":\"" + message + "\"}";

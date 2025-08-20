@@ -624,8 +624,11 @@ void Application::AbortSpeaking(AbortReason reason) {
 }
 
 void Application::SetListeningMode(ListeningMode mode) {
+    ESP_LOGI(TAG, "SetListeningMode called with mode: %d", mode);
     listening_mode_ = mode;
+    ESP_LOGI(TAG, "About to call SetDeviceState(kDeviceStateListening)");
     SetDeviceState(kDeviceStateListening);
+    ESP_LOGI(TAG, "SetListeningMode completed");
 }
 
 void Application::SetDeviceState(DeviceState state) {
@@ -659,35 +662,53 @@ void Application::SetDeviceState(DeviceState state) {
             display->SetChatMessage("system", "");
             break;
         case kDeviceStateListening:
+            ESP_LOGI(TAG, "Entering kDeviceStateListening state");
             display->SetStatus(Lang::Strings::LISTENING);
             display->SetEmotion("neutral");
 
             // Make sure the audio processor is running
+            ESP_LOGI(TAG, "Checking if audio processor is running: %s", audio_service_.IsAudioProcessorRunning() ? "true" : "false");
             if (!audio_service_.IsAudioProcessorRunning()) {
+                ESP_LOGI(TAG, "Audio processor not running, starting it now");
                 // Send the start listening command
+                ESP_LOGI(TAG, "Sending start listening command with mode: %d", listening_mode_);
                 protocol_->SendStartListening(listening_mode_);
+                ESP_LOGI(TAG, "About to call audio_service_.EnableVoiceProcessing(true)");
                 audio_service_.EnableVoiceProcessing(true);
+                ESP_LOGI(TAG, "audio_service_.EnableVoiceProcessing(true) completed");
+                ESP_LOGI(TAG, "About to call audio_service_.EnableWakeWordDetection(false)");
                 audio_service_.EnableWakeWordDetection(false);
+                ESP_LOGI(TAG, "audio_service_.EnableWakeWordDetection(false) completed");
+                ESP_LOGI(TAG, "Audio processor should now be running");
+            } else {
+                ESP_LOGI(TAG, "Audio processor is already running, skipping initialization");
             }
+            ESP_LOGI(TAG, "kDeviceStateListening state setup completed");
             break;
         case kDeviceStateSpeaking:
+            ESP_LOGI(TAG, "Entering kDeviceStateSpeaking state");
             display->SetStatus(Lang::Strings::SPEAKING);
 
             if (listening_mode_ != kListeningModeRealtime) {
+                ESP_LOGI(TAG, "listening_mode_ != kListeningModeRealtime, disabling voice processing");
+                ESP_LOGI(TAG, "About to call audio_service_.EnableVoiceProcessing(false)");
                 audio_service_.EnableVoiceProcessing(false);
+                ESP_LOGI(TAG, "audio_service_.EnableVoiceProcessing(false) completed");
                 // Only AFE wake word can be detected in speaking mode
 #if CONFIG_USE_AFE_WAKE_WORD
+                ESP_LOGI(TAG, "CONFIG_USE_AFE_WAKE_WORD enabled, enabling wake word detection");
                 audio_service_.EnableWakeWordDetection(true);
 #else
+                ESP_LOGI(TAG, "CONFIG_USE_AFE_WAKE_WORD disabled, disabling wake word detection");
                 audio_service_.EnableWakeWordDetection(false);
 #endif
             } else {
-                // 触摸事件使用实时模式，保持语音处理启用，确保能自动回到监听状态
-                ESP_LOGI(TAG, "Touch event speaking mode: keeping voice processing enabled for auto-return to listening");
-                audio_service_.EnableVoiceProcessing(true);
-                audio_service_.EnableWakeWordDetection(false);
+                ESP_LOGI(TAG, "listening_mode_ == kListeningModeRealtime, keeping voice processing enabled");
             }
+            ESP_LOGI(TAG, "About to call audio_service_.ResetDecoder()");
             audio_service_.ResetDecoder();
+            ESP_LOGI(TAG, "audio_service_.ResetDecoder() completed");
+            ESP_LOGI(TAG, "kDeviceStateSpeaking state setup completed");
             break;
         default:
             // Do nothing
@@ -835,16 +856,21 @@ void Application::HandleTouchEventInIdleState(const std::string& message) {
         ESP_LOGE(TAG, "Protocol not available for touch event");
         return;
     }
-    
-    // 3. 设置触摸事件的监听模式为实时模式，避免语音处理被禁用
-    listening_mode_ = kListeningModeRealtime;  
-    ESP_LOGI(TAG, "Set listening mode to realtime for touch event");
 
-    // 3. 切换到监听状态，等待服务器回复
-    ESP_LOGI(TAG, "Switching to listening state for touch event response");
-    SetDeviceState(kDeviceStateListening);
+    // 3. 先切换到监听状态以启用音频处理（参考唤醒词流程）
+    ESP_LOGI(TAG, "Switching to Listening state to enable audio processing");
+    ESP_LOGI(TAG, "About to call SetListeningMode(kListeningModeAutoStop)");
+    SetListeningMode(kListeningModeAutoStop);
+    ESP_LOGI(TAG, "SetListeningMode(kListeningModeAutoStop) completed");
     
-    // 4. 确保音频输出启用（解决音频输出被禁用的问题）
+    // 4. 延迟切换到说话状态，给音频处理足够时间建立
+    ESP_LOGI(TAG, "Delaying switch to Speaking state to allow audio processing to establish");
+    // 使用任务延迟给音频处理足够时间建立
+    vTaskDelay(pdMS_TO_TICKS(500)); // 延迟1秒，给音频处理足够时间
+    ESP_LOGI(TAG, "Delayed switch to Speaking state for touch event response");
+    SetDeviceState(kDeviceStateSpeaking);
+    
+    // 5. 确保音频输出启用（解决音频输出被禁用的问题）
     auto codec = Board::GetInstance().GetAudioCodec();
     if (codec) {
         ESP_LOGI(TAG, "Ensuring audio output is enabled for touch event");

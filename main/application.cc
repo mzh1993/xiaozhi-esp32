@@ -681,6 +681,11 @@ void Application::SetDeviceState(DeviceState state) {
 #else
                 audio_service_.EnableWakeWordDetection(false);
 #endif
+            } else {
+                // 触摸事件使用实时模式，保持语音处理启用，确保能自动回到监听状态
+                ESP_LOGI(TAG, "Touch event speaking mode: keeping voice processing enabled for auto-return to listening");
+                audio_service_.EnableVoiceProcessing(true);
+                audio_service_.EnableWakeWordDetection(false);
             }
             audio_service_.ResetDecoder();
             break;
@@ -817,7 +822,6 @@ void Application::HandleTouchEventInIdleState(const std::string& message) {
             SetDeviceState(kDeviceStateIdle);
             return;
         }
-        
         // 等待音频通道打开完成
         ESP_LOGI(TAG, "Audio channel opened successfully");
     }
@@ -834,6 +838,7 @@ void Application::HandleTouchEventInIdleState(const std::string& message) {
     
     // 3. 设置触摸事件的监听模式为实时模式，避免语音处理被禁用
     listening_mode_ = kListeningModeRealtime;  
+    ESP_LOGI(TAG, "Set listening mode to realtime for touch event");
 
     // 3. 切换到监听状态，等待服务器回复
     ESP_LOGI(TAG, "Switching to listening state for touch event response");

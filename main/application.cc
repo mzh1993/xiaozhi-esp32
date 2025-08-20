@@ -696,6 +696,7 @@ void Application::Reboot() {
 }
 
 void Application::WakeWordInvoke(const std::string& wake_word) {
+    // 如果设备处于空闲状态，则切换到聊天状态
     if (device_state_ == kDeviceStateIdle) {
         ToggleChatState();
         Schedule([this, wake_word]() {
@@ -703,17 +704,59 @@ void Application::WakeWordInvoke(const std::string& wake_word) {
                 protocol_->SendWakeWordDetected(wake_word); 
             }
         }); 
-    } else if (device_state_ == kDeviceStateSpeaking) {
+    }
+    // 如果设备处于说话状态，则停止说话
+    else if (device_state_ == kDeviceStateSpeaking) {
         Schedule([this]() {
             AbortSpeaking(kAbortReasonNone);
         });
-    } else if (device_state_ == kDeviceStateListening) {   
+    } 
+    // 如果设备处于监听状态，则关闭音频通道
+    else if (device_state_ == kDeviceStateListening) {   
         Schedule([this]() {
             if (protocol_) {
                 protocol_->CloseAudioChannel();
             }
         });
     }
+}
+
+/**
+ * 处理触摸事件
+ * @param message 触摸事件消息
+ * 
+ * 作用：处理触摸按钮的各种事件，发送触摸事件消息给服务器
+ * 触摸事件会打断当前语音播放，立即请求服务器响应
+ */
+void Application::HandleTouchEvent(const std::string& message) {
+    ESP_LOGI(TAG, "Handle touch event: message=%s", message.c_str());
+    
+    // 1. 立即中止当前语音播放（如果正在播放）
+    if (device_state_ == kDeviceStateSpeaking) {
+        ESP_LOGI(TAG, "Aborting current speech for touch event");
+        AbortSpeaking(kAbortReasonNone);
+    }
+    
+    // 2. 确保音频通道打开
+    if (!protocol_ || !protocol_->IsAudioChannelOpened()) {
+        ESP_LOGI(TAG, "Opening audio channel for touch event");
+        SetDeviceState(kDeviceStateConnecting);
+        if (!protocol_->OpenAudioChannel()) {
+            ESP_LOGE(TAG, "Failed to open audio channel for touch event");
+            return; // 连接失败
+        }
+    }
+    
+    // 3. 发送触摸事件MCP消息
+    Schedule([this, message]() {
+        if (protocol_) {
+            protocol_->SendTouchEvent(message);
+            ESP_LOGI(TAG, "Touch event message sent");
+        }
+    });
+    
+    // 4. 切换到监听状态，等待服务器回复
+    SetDeviceState(kDeviceStateListening);
 }
 
 bool Application::CanEnterSleepMode() {

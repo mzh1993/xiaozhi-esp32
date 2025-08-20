@@ -17,6 +17,8 @@
 #include <driver/i2c_master.h>
 #include <esp_lcd_panel_ops.h>
 #include <esp_lcd_panel_vendor.h>
+#include <chrono>
+#include <random>
 
 #ifdef SH1106
 #include <esp_lcd_panel_sh1106.h>
@@ -42,6 +44,97 @@ private:
     TouchButtonWrapper head_touch_button_;
     TouchButtonWrapper hand_touch_button_;
     TouchButtonWrapper belly_touch_button_;
+
+    // 触摸按键文本候选列表 - 用户触摸AI玩具身体部位的动作描述
+    std::vector<std::string> head_touch_texts_ = {
+        "摸摸头~",
+        "摸摸小脑袋",
+        "摸摸头发",
+        "摸摸脑瓜",
+        "摸摸头，好舒服",
+        "摸摸头，真可爱",
+        "摸摸头，软软的",
+        "摸摸头，暖暖的",
+        "摸摸头，痒痒的",
+        "摸摸头，好开心"
+    };
+    
+    std::vector<std::string> hand_touch_texts_ = {
+        "握手手~",
+        "拉拉手",
+        "击掌",
+        "握手手，好朋友",
+        "握手手，一起玩",
+        "握手手，真开心",
+        "握手手，暖暖的",
+        "握手手，软软的",
+        "握手手，好舒服",
+        "握手手，真可爱"
+    };
+    
+    std::vector<std::string> belly_touch_texts_ = {
+        "摸摸肚子~",
+        "摸摸小肚子",
+        "摸摸肚皮",
+        "摸摸肚子，好软",
+        "摸摸肚子，圆圆的",
+        "摸摸肚子，暖暖的",
+        "摸摸肚子，好舒服",
+        "摸摸肚子，真可爱",
+        "摸摸肚子，痒痒的",
+        "摸摸肚子，好开心"
+    };
+    
+    std::vector<std::string> head_long_press_texts_ = {
+        "长时间摸头~",
+        "摸头摸了好久",
+        "摸头摸得停不下来",
+        "摸头摸得好久",
+        "摸头摸得好舒服",
+        "摸头摸得痒痒的",
+        "摸头摸得好温暖",
+        "摸头摸得好开心",
+        "摸头摸得软软的",
+        "摸头摸得真可爱"
+    };
+    
+    std::vector<std::string> hand_long_press_texts_ = {
+        "长时间握手手~",
+        "握手手握了好久",
+        "握手手握得停不下来",
+        "握手手握得好久",
+        "握手手握得好舒服",
+        "握手手握得暖暖的",
+        "握手手握得软软的",
+        "握手手握得好开心",
+        "握手手握得真可爱",
+        "握手手握得真舒服"
+    };
+    
+    std::vector<std::string> belly_long_press_texts_ = {
+        "长时间摸肚子~",
+        "摸肚子摸了好久",
+        "摸肚子摸得停不下来",
+        "摸肚子摸得好久",
+        "摸肚子摸得好舒服",
+        "摸肚子摸得痒痒的",
+        "摸肚子摸得好温暖",
+        "摸肚子摸得好开心",
+        "摸肚子摸得软软的",
+        "摸肚子摸得真可爱"
+    };
+
+    // 随机选择文本的辅助函数
+    std::string GetRandomText(const std::vector<std::string>& texts) {
+        if (texts.empty()) {
+            return "摸摸你哦~";
+        }
+        // 使用更好的随机数生成器
+        static std::random_device rd;
+        static std::mt19937 gen(rd());
+        std::uniform_int_distribution<> dis(0, texts.size() - 1);
+        return texts[dis(gen)];
+    }
 
     void InitializeDisplayI2c() {
         i2c_master_bus_config_t bus_config = {
@@ -183,44 +276,44 @@ private:
         // 新增玩具触摸按键事件处理 - 使用新的事件接口
         head_touch_button_.OnClick([this]() {
             ESP_LOGI(TAG, "Head touch button clicked");
-            GetDisplay()->ShowNotification("摸摸头~");
+            GetDisplay()->ShowNotification(GetRandomText(head_touch_texts_));
             // 使用新的事件接口，只发送事件，不调用业务逻辑
-            Application::GetInstance().PostTouchEvent("摸摸头~");
+            Application::GetInstance().PostTouchEvent(GetRandomText(head_touch_texts_));
         });
         
         head_touch_button_.OnLongPress([this]() {
             ESP_LOGI(TAG, "Head touch button long pressed");
-            GetDisplay()->ShowNotification("长时间摸头~");
+            GetDisplay()->ShowNotification(GetRandomText(head_long_press_texts_));
             // 使用新的事件接口
-            Application::GetInstance().PostTouchEvent("长时间摸头~");
+            Application::GetInstance().PostTouchEvent(GetRandomText(head_long_press_texts_));
         });
         
         hand_touch_button_.OnClick([this]() {
             ESP_LOGI(TAG, "Hand touch button clicked");
-            GetDisplay()->ShowNotification("握手手~");
+            GetDisplay()->ShowNotification(GetRandomText(hand_touch_texts_));
             // 使用新的事件接口
-            Application::GetInstance().PostTouchEvent("我们来握手手哦！");
+            Application::GetInstance().PostTouchEvent(GetRandomText(hand_touch_texts_));
         });
         
         hand_touch_button_.OnLongPress([this]() {
             ESP_LOGI(TAG, "Hand touch button long pressed");
-            GetDisplay()->ShowNotification("我要抢你手上的玩具咯~");
+            GetDisplay()->ShowNotification(GetRandomText(hand_long_press_texts_));
             // 使用新的事件接口
-            Application::GetInstance().PostTouchEvent("我要抢你手上的玩具咯");
+            Application::GetInstance().PostTouchEvent(GetRandomText(hand_long_press_texts_));
         });
         
         belly_touch_button_.OnClick([this]() {
             ESP_LOGI(TAG, "Belly touch button clicked");
-            GetDisplay()->ShowNotification("摸摸肚子~");
+            GetDisplay()->ShowNotification(GetRandomText(belly_touch_texts_));
             // 使用新的事件接口
-            Application::GetInstance().PostTouchEvent("摸摸肚子~");
+            Application::GetInstance().PostTouchEvent(GetRandomText(belly_touch_texts_));
         });
         
         belly_touch_button_.OnLongPress([this]() {
             ESP_LOGI(TAG, "Belly touch button long pressed");
-            GetDisplay()->ShowNotification("长时间摸肚子~");
+            GetDisplay()->ShowNotification(GetRandomText(belly_long_press_texts_));
             // 使用新的事件接口
-            Application::GetInstance().PostTouchEvent("长时间摸肚子~");
+            Application::GetInstance().PostTouchEvent(GetRandomText(belly_long_press_texts_));
         });
 
     }

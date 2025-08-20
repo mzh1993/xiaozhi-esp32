@@ -825,7 +825,7 @@ void Application::HandleTouchEventInIdleState(const std::string& message) {
     // 2. 发送触摸事件消息
     if (protocol_) {
         ESP_LOGI(TAG, "Sending touch event message: %s", message.c_str());
-        protocol_->SendTouchEvent(message);
+        protocol_->SendMessage(message);
         ESP_LOGI(TAG, "Touch event message sent successfully");
     } else {
         ESP_LOGE(TAG, "Protocol not available for touch event");

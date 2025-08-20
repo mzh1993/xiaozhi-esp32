@@ -185,42 +185,42 @@ private:
             ESP_LOGI(TAG, "Head touch button clicked");
             GetDisplay()->ShowNotification("摸摸头~");
             // 使用新的事件接口，只发送事件，不调用业务逻辑
-            Application::GetInstance().PostEvent("摸摸头~");
+            Application::GetInstance().PostTouchEvent("摸摸头~");
         });
         
         head_touch_button_.OnLongPress([this]() {
             ESP_LOGI(TAG, "Head touch button long pressed");
             GetDisplay()->ShowNotification("长时间摸头~");
             // 使用新的事件接口
-            Application::GetInstance().PostEvent("长时间摸头~");
+            Application::GetInstance().PostTouchEvent("长时间摸头~");
         });
         
         hand_touch_button_.OnClick([this]() {
             ESP_LOGI(TAG, "Hand touch button clicked");
             GetDisplay()->ShowNotification("握手手~");
             // 使用新的事件接口
-            Application::GetInstance().PostEvent("我们来握手手哦！");
+            Application::GetInstance().PostTouchEvent("我们来握手手哦！");
         });
         
         hand_touch_button_.OnLongPress([this]() {
             ESP_LOGI(TAG, "Hand touch button long pressed");
             GetDisplay()->ShowNotification("我要抢你手上的玩具咯~");
             // 使用新的事件接口
-            Application::GetInstance().PostEvent("我要抢你手上的玩具咯");
+            Application::GetInstance().PostTouchEvent("我要抢你手上的玩具咯");
         });
         
         belly_touch_button_.OnClick([this]() {
             ESP_LOGI(TAG, "Belly touch button clicked");
             GetDisplay()->ShowNotification("摸摸肚子~");
             // 使用新的事件接口
-            Application::GetInstance().PostEvent("摸摸肚子~");
+            Application::GetInstance().PostTouchEvent("摸摸肚子~");
         });
         
         belly_touch_button_.OnLongPress([this]() {
             ESP_LOGI(TAG, "Belly touch button long pressed");
             GetDisplay()->ShowNotification("长时间摸肚子~");
             // 使用新的事件接口
-            Application::GetInstance().PostEvent("长时间摸肚子~");
+            Application::GetInstance().PostTouchEvent("长时间摸肚子~");
         });
 
     }

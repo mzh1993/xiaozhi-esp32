@@ -721,68 +721,68 @@ void Application::WakeWordInvoke(const std::string& wake_word) {
     }
 }
 /**
- * 事件事件接口 - 只负责事件记录和调度
- * @param message 事件消息
+ * 触摸事件事件接口 - 只负责事件记录和调度
+ * @param message 触摸事件消息
  * 
- * 作用：传感器层调用此接口发送事件
+ * 作用：触摸传感器层调用此接口发送触摸事件
  * 此函数只做事件记录，不处理业务逻辑，确保架构分层清晰
  */
-void Application::PostEvent(const std::string& message) {
+void Application::PostTouchEvent(const std::string& message) {
     ESP_LOGI(TAG, "Touch event posted: %s", message.c_str());
     
     // 通过Schedule放入主循环，确保状态一致性
     Schedule([this, message]() {
-        ProcessEvent(message);
+        ProcessTouchEvent(message);
     });
 }
 
 /**
- * 事件处理函数 - 在主循环中执行所有业务逻辑
- * @param message 事件消息
+ * 触摸事件处理函数 - 在主循环中执行所有业务逻辑
+ * @param message 触摸事件消息
  * 
- * 作用：在主循环中统一处理事件，确保状态一致性和操作顺序
+ * 作用：在主循环中统一处理触摸事件，确保状态一致性和操作顺序
  * 所有状态管理和业务逻辑都在主循环中执行，避免竞争条件
  */
-void Application::ProcessEvent(const std::string& message) {
+void Application::ProcessTouchEvent(const std::string& message) {
     ESP_LOGI(TAG, "Processing touch event: %s", message.c_str());
     
     // 1. 检查当前设备状态，决定处理策略
     ESP_LOGI(TAG, "Current device state: %s", STATE_STRINGS[device_state_]);
     
-    // 2. 根据当前状态执行相应的事件处理逻辑
+    // 2. 根据当前状态执行相应的触摸事件处理逻辑
     switch (device_state_) {
         case kDeviceStateIdle:
-            // 空闲状态：直接处理事件
+            // 空闲状态：直接处理触摸事件
             ESP_LOGI(TAG, "Device idle, processing touch event directly");
-            HandleEventInIdleState(message);
+            HandleTouchEventInIdleState(message);
             break;
             
         case kDeviceStateSpeaking:
-            // 说话状态：中止当前语音，然后处理事件
+            // 说话状态：中止当前语音，然后处理触摸事件
             ESP_LOGI(TAG, "Device speaking, aborting speech for touch event");
             AbortSpeaking(kAbortReasonNone);
-            // 等待中止完成后再处理事件
+            // 等待中止完成后再处理触摸事件
             Schedule([this, message]() {
-                HandleEventInIdleState(message);
+                HandleTouchEventInIdleState(message);
             });
             break;
             
         case kDeviceStateListening:
-            // 监听状态：停止监听，然后处理事件
+            // 监听状态：停止监听，然后处理触摸事件
             ESP_LOGI(TAG, "Device listening, stopping listening for touch event");
             protocol_->SendStopListening();
             SetDeviceState(kDeviceStateIdle);
-            // 等待状态转换完成后再处理事件
+            // 等待状态转换完成后再处理触摸事件
             Schedule([this, message]() {
-                HandleEventInIdleState(message);
+                HandleTouchEventInIdleState(message);
             });
             break;
             
         case kDeviceStateConnecting:
-            // 连接状态：等待连接完成后再处理事件
+            // 连接状态：等待连接完成后再处理触摸事件
             ESP_LOGI(TAG, "Device connecting, waiting for connection completion");
             Schedule([this, message]() {
-                ProcessEvent(message);
+                ProcessTouchEvent(message);
             });
             break;
             
@@ -790,20 +790,20 @@ void Application::ProcessEvent(const std::string& message) {
             // 其他状态：等待回到空闲状态后再处理
             ESP_LOGW(TAG, "Device in state %s, waiting for idle state", STATE_STRINGS[device_state_]);
             Schedule([this, message]() {
-                ProcessEvent(message);
+                ProcessTouchEvent(message);
             });
             break;
     }
 }
 
 /**
- * 在空闲状态下处理事件
- * @param message 事件消息
+ * 在空闲状态下处理触摸事件
+ * @param message 触摸事件消息
  * 
- * 作用：当设备处于空闲状态时，执行事件的完整处理流程
+ * 作用：当设备处于空闲状态时，执行触摸事件的完整处理流程
  * 包括音频通道管理、消息发送、状态转换等
  */
-void Application::HandleEventInIdleState(const std::string& message) {
+void Application::HandleTouchEventInIdleState(const std::string& message) {
     ESP_LOGI(TAG, "Handling touch event in idle state: %s", message.c_str());
     
     // 1. 确保音频通道打开
@@ -822,7 +822,7 @@ void Application::HandleEventInIdleState(const std::string& message) {
         ESP_LOGI(TAG, "Audio channel opened successfully");
     }
     
-    // 2. 发送事件消息
+    // 2. 发送触摸事件消息
     if (protocol_) {
         ESP_LOGI(TAG, "Sending touch event message: %s", message.c_str());
         protocol_->SendTouchEvent(message);
@@ -832,7 +832,7 @@ void Application::HandleEventInIdleState(const std::string& message) {
         return;
     }
     
-    // 3. 设置事件的监听模式为实时模式，避免语音处理被禁用
+    // 3. 设置触摸事件的监听模式为实时模式，避免语音处理被禁用
     listening_mode_ = kListeningModeRealtime;  
 
     // 3. 切换到监听状态，等待服务器回复

@@ -54,7 +54,7 @@ public:
     void StopListening();
     void Reboot();
     void WakeWordInvoke(const std::string& wake_word);
-    void PostEvent(const std::string& message);
+    void PostTouchEvent(const std::string& message);
     bool CanEnterSleepMode();
     void SendMcpMessage(const std::string& payload);
     void SetAecMode(AecMode mode);
@@ -88,8 +88,8 @@ private:
     void OnClockTimer();
     void SetListeningMode(ListeningMode mode);
 
-    void ProcessEvent(const std::string& message);
-    void HandleEventInIdleState(const std::string& message);
+    void ProcessTouchEvent(const std::string& message);
+    void HandleTouchEventInIdleState(const std::string& message);
 };
 
 #endif // _APPLICATION_H_

@@ -184,60 +184,43 @@ private:
         head_touch_button_.OnClick([this]() {
             ESP_LOGI(TAG, "Head touch button clicked");
             GetDisplay()->ShowNotification("摸摸头~");
-            auto codec = GetAudioCodec();
-            codec->EnableOutput(true);
-            // 可以在这里添加头部触摸的特定功能
-            std::string wake_word="来真乖，摸摸头";
-            Application::GetInstance().WakeWordInvoke(wake_word);
+            // 使用新的触摸事件处理接口
+            Application::GetInstance().HandleTouchEvent("摸摸头~");
         });
         
         head_touch_button_.OnLongPress([this]() {
             ESP_LOGI(TAG, "Head touch button long pressed");
             GetDisplay()->ShowNotification("长时间摸头~");
-            auto codec = GetAudioCodec();
-            codec->EnableOutput(true);
-            // 可以在这里添加长时间摸头的特定功能
-            std::string wake_word="你真的太乖啦，我要一直摸摸你的头和脸蛋";
-            Application::GetInstance().WakeWordInvoke(wake_word);
+            // 使用新的触摸事件处理接口
+            Application::GetInstance().HandleTouchEvent("长时间摸头~");
         });
         
         hand_touch_button_.OnClick([this]() {
             ESP_LOGI(TAG, "Hand touch button clicked");
             GetDisplay()->ShowNotification("握手手~");
-            auto codec = GetAudioCodec();
-            codec->EnableOutput(true);
-            // 可以在这里添加手部触摸的特定功能
-            std::string wake_word="我正在跟你握握手哦";
-            Application::GetInstance().WakeWordInvoke(wake_word);
+            // 使用新的触摸事件处理接口
+            Application::GetInstance().HandleTouchEvent("我们来握手手哦！");
         });
         
         hand_touch_button_.OnLongPress([this]() {
             ESP_LOGI(TAG, "Hand touch button long pressed");
             GetDisplay()->ShowNotification("我要抢你手上的玩具咯~");
-            auto codec = GetAudioCodec();
-            codec->EnableOutput(true);
-            // 可以在这里添加长时间握手的特定功能
-            std::string wake_word="我要抢你手上的玩具咯";
-            Application::GetInstance().WakeWordInvoke(wake_word);
+            // 使用新的触摸事件处理接口
+            Application::GetInstance().HandleTouchEvent("我要抢你手上的玩具咯");
         });
         
         belly_touch_button_.OnClick([this]() {
             ESP_LOGI(TAG, "Belly touch button clicked");
             GetDisplay()->ShowNotification("摸摸肚子~");
-            auto codec = GetAudioCodec();
-            codec->EnableOutput(true);
-            // 可以在这里添加肚子触摸的特定功能
-            std::string wake_word="我在摸摸你圆滚滚的肚子";
-            Application::GetInstance().WakeWordInvoke(wake_word);
+            // 使用新的触摸事件处理接口
+            Application::GetInstance().HandleTouchEvent("摸摸肚子~");
         });
         
         belly_touch_button_.OnLongPress([this]() {
             ESP_LOGI(TAG, "Belly touch button long pressed");
             GetDisplay()->ShowNotification("长时间摸肚子~");
-            auto codec = GetAudioCodec();
-            codec->EnableOutput(true);
-            std::string wake_word="我正在摸摸你的肚子，哇哦，好暖和的肚子哦";
-            Application::GetInstance().WakeWordInvoke(wake_word);
+            // 使用新的触摸事件处理接口
+            Application::GetInstance().HandleTouchEvent("长时间摸肚子~");
         });
     }
 

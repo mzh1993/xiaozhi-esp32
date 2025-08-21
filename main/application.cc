@@ -447,16 +447,30 @@ void Application::Start() {
                 ESP_LOGI(TAG, "Received LLM emotion: %s", emotion->valuestring);
                 Schedule([this, display, emotion_str = std::string(emotion->valuestring)]() {
                     ESP_LOGI(TAG, "Processing LLM emotion in main loop: %s", emotion_str.c_str());
-                    display->SetEmotion(emotion_str.c_str());
-                    // 触发对应的耳朵动作
-                    auto ear_controller = Board::GetInstance().GetEarController();
-                    ESP_LOGI(TAG, "Got ear controller: %s", ear_controller ? "valid" : "null");
-                    if (ear_controller) {
-                        ESP_LOGI(TAG, "Triggering ear emotion: %s", emotion_str.c_str());
-                        esp_err_t ret = ear_controller->TriggerByEmotion(emotion_str.c_str());
-                        ESP_LOGI(TAG, "Ear emotion trigger result: %s", (ret == ESP_OK) ? "success" : "failed");
+                    
+                    // 检查情绪是否发生变化
+                    static std::string last_emotion = "";
+                    if (last_emotion != emotion_str) {
+                        ESP_LOGI(TAG, "Emotion changed from '%s' to '%s'", last_emotion.c_str(), emotion_str.c_str());
+                        last_emotion = emotion_str;
+                        
+                        // 更新显示
+                        display->SetEmotion(emotion_str.c_str());
+                        
+                        // 触发对应的耳朵动作
+                        auto ear_controller = Board::GetInstance().GetEarController();
+                        ESP_LOGI(TAG, "Got ear controller: %s", ear_controller ? "valid" : "null");
+                        if (ear_controller) {
+                            ESP_LOGI(TAG, "Triggering ear emotion: %s", emotion_str.c_str());
+                            esp_err_t ret = ear_controller->TriggerByEmotion(emotion_str.c_str());
+                            ESP_LOGI(TAG, "Ear emotion trigger result: %s", (ret == ESP_OK) ? "success" : "failed");
+                        } else {
+                            ESP_LOGW(TAG, "No ear controller available for emotion: %s", emotion_str.c_str());
+                        }
                     } else {
-                        ESP_LOGW(TAG, "No ear controller available for emotion: %s", emotion_str.c_str());
+                        ESP_LOGI(TAG, "Emotion unchanged: %s, skipping ear action", emotion_str.c_str());
+                        // 只更新显示，不触发耳朵动作
+                        display->SetEmotion(emotion_str.c_str());
                     }
                 });
             } else {

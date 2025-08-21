@@ -47,49 +47,49 @@ ear_movement_step_t Tc118sEarController::playful_steps_[] = {
 
 // 新增：更自然的情绪场景
 ear_movement_step_t Tc118sEarController::gentle_happy_steps_[] = {
-    {EAR_FORWARD, EAR_SPEED_SLOW, 1000, 500},      // 温和的开心，增加时间
-    {EAR_BACKWARD, EAR_SPEED_SLOW, 800, 400},
-    {EAR_FORWARD, EAR_SPEED_NORMAL, 600, 300}
+    {EAR_FORWARD, EAR_SPEED_NORMAL, 400, 200},      // 大幅缩短时间
+    {EAR_BACKWARD, EAR_SPEED_NORMAL, 300, 150},
+    {EAR_FORWARD, EAR_SPEED_NORMAL, 200, 100}
 };
 
 ear_movement_step_t Tc118sEarController::surprised_steps_[] = {
-    {EAR_FORWARD, EAR_SPEED_FAST, 400, 0},        // 快速竖起，增加时间
-    {EAR_BACKWARD, EAR_SPEED_SLOW, 1200, 600}     // 缓慢恢复，增加时间
+    {EAR_FORWARD, EAR_SPEED_FAST, 300, 0},        // 缩短时间
+    {EAR_BACKWARD, EAR_SPEED_SLOW, 600, 300}     // 缩短时间
 };
 
 ear_movement_step_t Tc118sEarController::sleepy_steps_[] = {
-    {EAR_BACKWARD, EAR_SPEED_SLOW, 1800, 0},      // 缓慢下垂，增加时间
-    {EAR_FORWARD, EAR_SPEED_SLOW, 600, 1200}      // 轻微抬起再下垂，增加时间
+    {EAR_BACKWARD, EAR_SPEED_SLOW, 800, 0},      // 缩短时间
+    {EAR_FORWARD, EAR_SPEED_SLOW, 300, 600}      // 缩短时间
 };
 
 ear_movement_step_t Tc118sEarController::sad_steps_[] = {
-    {EAR_BACKWARD, EAR_SPEED_SLOW, 1500, 0},      // 缓慢下垂，增加时间
-    {EAR_FORWARD, EAR_SPEED_SLOW, 400, 1000}      // 轻微抬起再下垂，增加时间
+    {EAR_BACKWARD, EAR_SPEED_SLOW, 600, 0},      // 缩短时间
+    {EAR_FORWARD, EAR_SPEED_SLOW, 200, 500}      // 缩短时间
 };
 
 // 默认情绪映射 - 优化版本
 const std::map<std::string, emotion_ear_mapping_t> Tc118sEarController::default_emotion_mappings_ = {
     {"neutral", {EAR_SCENARIO_NORMAL, 0, true}},
-    {"happy", {EAR_SCENARIO_GENTLE_HAPPY, 2000, true}},      // 缩短到2秒
-    {"laughing", {EAR_SCENARIO_EXCITED, 2500, true}},        // 缩短到2.5秒
-    {"funny", {EAR_SCENARIO_PLAYFUL, 1800, true}},           // 缩短到1.8秒
+    {"happy", {EAR_SCENARIO_GENTLE_HAPPY, 1500, true}},      // 缩短到1.5秒
+    {"laughing", {EAR_SCENARIO_EXCITED, 2000, true}},        // 缩短到2秒
+    {"funny", {EAR_SCENARIO_PLAYFUL, 1500, true}},           // 缩短到1.5秒
     {"sad", {EAR_SCENARIO_SAD, 0, false}},                   // 伤心时耳朵下垂，不自动停止
-    {"angry", {EAR_SCENARIO_ALERT, 1500, true}},             // 缩短到1.5秒
+    {"angry", {EAR_SCENARIO_ALERT, 1200, true}},             // 缩短到1.2秒
     {"crying", {EAR_SCENARIO_SAD, 0, false}},                // 哭泣时耳朵下垂
-    {"loving", {EAR_SCENARIO_CURIOUS, 1500, true}},          // 缩短到1.5秒
-    {"embarrassed", {EAR_SCENARIO_SAD, 1200, true}},         // 缩短到1.2秒
-    {"surprised", {EAR_SCENARIO_SURPRISED, 1000, true}},     // 缩短到1秒
-    {"shocked", {EAR_SCENARIO_SURPRISED, 1200, true}},       // 缩短到1.2秒
-    {"thinking", {EAR_SCENARIO_CURIOUS, 2000, true}},        // 缩短到2秒
-    {"winking", {EAR_SCENARIO_PLAYFUL, 1200, true}},         // 缩短到1.2秒
-    {"cool", {EAR_SCENARIO_ALERT, 800, true}},               // 缩短到0.8秒
+    {"loving", {EAR_SCENARIO_CURIOUS, 1200, true}},          // 缩短到1.2秒
+    {"embarrassed", {EAR_SCENARIO_SAD, 1000, true}},         // 缩短到1秒
+    {"surprised", {EAR_SCENARIO_SURPRISED, 800, true}},      // 缩短到0.8秒
+    {"shocked", {EAR_SCENARIO_SURPRISED, 1000, true}},       // 缩短到1秒
+    {"thinking", {EAR_SCENARIO_CURIOUS, 1500, true}},        // 缩短到1.5秒
+    {"winking", {EAR_SCENARIO_PLAYFUL, 1000, true}},         // 缩短到1秒
+    {"cool", {EAR_SCENARIO_ALERT, 600, true}},               // 缩短到0.6秒
     {"relaxed", {EAR_SCENARIO_NORMAL, 0, true}},
-    {"delicious", {EAR_SCENARIO_EXCITED, 1500, true}},       // 缩短到1.5秒
-    {"kissy", {EAR_SCENARIO_CURIOUS, 1200, true}},           // 缩短到1.2秒
-    {"confident", {EAR_SCENARIO_ALERT, 800, true}},          // 缩短到0.8秒
+    {"delicious", {EAR_SCENARIO_EXCITED, 1200, true}},       // 缩短到1.2秒
+    {"kissy", {EAR_SCENARIO_CURIOUS, 1000, true}},           // 缩短到1秒
+    {"confident", {EAR_SCENARIO_ALERT, 600, true}},          // 缩短到0.6秒
     {"sleepy", {EAR_SCENARIO_SLEEPY, 0, false}},             // 困倦时耳朵下垂
-    {"silly", {EAR_SCENARIO_PLAYFUL, 2000, true}},           // 缩短到2秒
-    {"confused", {EAR_SCENARIO_CURIOUS, 1800, true}}         // 缩短到1.8秒
+    {"silly", {EAR_SCENARIO_PLAYFUL, 1500, true}},           // 缩短到1.5秒
+    {"confused", {EAR_SCENARIO_CURIOUS, 1500, true}}         // 缩短到1.5秒
 };
 
 Tc118sEarController::Tc118sEarController(gpio_num_t left_ina_pin, gpio_num_t left_inb_pin,
@@ -338,35 +338,35 @@ esp_err_t Tc118sEarController::PlayScenario(ear_scenario_t scenario) {
             current_scenario_.steps = insect_bite_steps_;
             current_scenario_.step_count = 6;
             current_scenario_.loop_enabled = true;
-            current_scenario_.loop_count = 5;  // 重复5次
+            current_scenario_.loop_count = 2;  // 减少到2次
             break;
             
         case EAR_SCENARIO_CURIOUS:
             current_scenario_.steps = curious_steps_;
             current_scenario_.step_count = 4;
             current_scenario_.loop_enabled = true;
-            current_scenario_.loop_count = 3;
+            current_scenario_.loop_count = 2;  // 减少到2次
             break;
             
         case EAR_SCENARIO_EXCITED:
             current_scenario_.steps = excited_steps_;
             current_scenario_.step_count = 4;
             current_scenario_.loop_enabled = true;
-            current_scenario_.loop_count = 8;
+            current_scenario_.loop_count = 3;  // 减少到3次
             break;
             
         case EAR_SCENARIO_PLAYFUL:
             current_scenario_.steps = playful_steps_;
             current_scenario_.step_count = 6;
             current_scenario_.loop_enabled = true;
-            current_scenario_.loop_count = 4;
+            current_scenario_.loop_count = 2;  // 减少到2次
             break;
             
         case EAR_SCENARIO_GENTLE_HAPPY:
             current_scenario_.steps = gentle_happy_steps_;
             current_scenario_.step_count = 3;
             current_scenario_.loop_enabled = true;
-            current_scenario_.loop_count = 2;
+            current_scenario_.loop_count = 1;  // 减少到1次循环
             break;
             
         case EAR_SCENARIO_SURPRISED:

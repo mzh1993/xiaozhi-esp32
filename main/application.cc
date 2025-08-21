@@ -446,6 +446,8 @@ void Application::Start() {
             if (cJSON_IsString(emotion)) {
                 Schedule([this, display, emotion_str = std::string(emotion->valuestring)]() {
                     display->SetEmotion(emotion_str.c_str());
+                    // 触发对应的耳朵动作
+                    ear_trigger_by_emotion(emotion_str.c_str());
                 });
             }
         } else if (strcmp(type->valuestring, "mcp") == 0) {
@@ -504,6 +506,9 @@ void Application::Start() {
         audio_service_.PlaySound(Lang::Sounds::OGG_SUCCESS);
     }
 
+    // Initialize ear emotion integration system
+    ear_emotion_integration_init();
+    
     // Print heap stats
     SystemInfo::PrintHeapStats();
 }

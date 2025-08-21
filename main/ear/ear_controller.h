@@ -39,7 +39,9 @@ typedef enum {
     EAR_SCENARIO_SAD = 6,           // 伤心 - 耳朵下垂
     EAR_SCENARIO_ALERT = 7,         // 警觉 - 耳朵竖起
     EAR_SCENARIO_PLAYFUL = 8,       // 玩耍 - 不规则摆动
-    EAR_SCENARIO_CUSTOM = 9         // 自定义模式
+    EAR_SCENARIO_GENTLE_HAPPY = 9,  // 温和开心 - 缓慢摆动
+    EAR_SCENARIO_SURPRISED = 10,    // 惊讶 - 快速竖起后缓慢恢复
+    EAR_SCENARIO_CUSTOM = 11        // 自定义模式
 } ear_scenario_t;
 
 #ifdef __cplusplus

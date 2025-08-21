@@ -75,7 +75,7 @@ private:
 
     // 新增玩具触摸按键
     TouchButtonWrapper head_touch_button_;
-    TouchButtonWrapper hand_touch_button_;
+    TouchButtonWrapper nose_touch_button_;
     TouchButtonWrapper belly_touch_button_;
 
     // 耳朵控制器
@@ -83,29 +83,29 @@ private:
     
     // 触摸按键文本候选列表
     std::vector<std::string> head_touch_texts_ = {
-        "摸摸头~",
-        "好舒服的头~",
-        "摸摸你的小脑袋",
-        "头好痒痒的",
-        "摸摸头，摸摸头",
-        "你的头发软软的",
-        "摸摸你的头发",
-        "头好温暖",
-        "摸摸你的小脑瓜",
-        "头好舒服"
+        "哈哈，摸摸你的头哦~",
+        "哇，摸摸你的头，好舒服的头~",
+        "我来摸摸你的小脑袋啦",
+        "我在摸你头，头好痒痒的吧",
+        "来给我摸摸头，摸摸头",
+        "哇，摸摸你的头，你的头发软软的",
+        "我要摸摸你的头发",
+        "哇，摸摸你的头，头好温暖",
+        "摸摸你的小脑瓜，小脑瓜好可爱",
+        "摸摸你的头，头好舒服"
     };
     
-    std::vector<std::string> hand_touch_texts_ = {
-        "我们来握手手哦！",
-        "握手手，好朋友",
-        "你的手好温暖",
-        "握手手，拉拉手",
-        "我们来击掌吧！",
-        "握手手，一起玩",
-        "你的手好软",
-        "握手手，好朋友",
-        "我们来拉拉手",
-        "握手手，真开心"
+    std::vector<std::string> nose_touch_texts_ = {
+        "摸摸我的鼻子~",
+        "鼻子好痒痒",
+        "摸摸你的小鼻子",
+        "鼻子好软软的",
+        "摸摸鼻子，好舒服",
+        "你的鼻子圆圆的",
+        "摸摸你的小鼻头",
+        "鼻子好温暖",
+        "摸摸鼻子，真开心",
+        "鼻子好可爱"
     };
     
     std::vector<std::string> belly_touch_texts_ = {
@@ -134,17 +134,17 @@ private:
         "摸头摸得好久"
     };
     
-    std::vector<std::string> hand_long_press_texts_ = {
-        "我要抢你手上的玩具咯",
-        "你的玩具看起来好好玩",
-        "我也想玩你的玩具",
-        "玩具让我看看",
-        "你的玩具好有趣",
-        "我也想摸摸玩具",
-        "玩具让我玩玩",
-        "你的玩具好漂亮",
-        "我也想玩一下",
-        "玩具让我试试"
+    std::vector<std::string> nose_long_press_texts_ = {
+        "长时间摸鼻子~",
+        "鼻子被摸了好久",
+        "摸鼻子摸得停不下来",
+        "鼻子被摸得好舒服",
+        "长时间摸摸鼻子",
+        "鼻子被摸得痒痒的",
+        "摸鼻子摸得好久",
+        "鼻子被摸得好温暖",
+        "长时间摸摸小鼻子",
+        "鼻子被摸得好开心"
     };
     
     std::vector<std::string> belly_long_press_texts_ = {
@@ -337,11 +337,11 @@ private:
         ESP_LOGI(TAG, "Starting touch sensor initialization...");
         
         // 初始化触摸传感器 - 传入所有需要的通道
-        uint32_t touch_channels[] = {TOUCH_CHANNEL_HEAD, TOUCH_CHANNEL_HAND, TOUCH_CHANNEL_BELLY};
+        uint32_t touch_channels[] = {TOUCH_CHANNEL_HEAD, TOUCH_CHANNEL_NOSE, TOUCH_CHANNEL_BELLY};
         int channel_count = sizeof(touch_channels) / sizeof(touch_channels[0]);
         
-        ESP_LOGI(TAG, "Touch channels: HEAD=%d, HAND=%d, BELLY=%d", 
-                 TOUCH_CHANNEL_HEAD, TOUCH_CHANNEL_HAND, TOUCH_CHANNEL_BELLY);
+        ESP_LOGI(TAG, "Touch channels: HEAD=%d, NOSE=%d, BELLY=%d", 
+                 TOUCH_CHANNEL_HEAD, TOUCH_CHANNEL_NOSE, TOUCH_CHANNEL_BELLY);
         
         TouchButtonWrapper::InitializeTouchSensor(touch_channels, channel_count);
         TouchButtonWrapper::StartTouchSensor();
@@ -349,7 +349,7 @@ private:
         // 触摸传感器初始化完成后，创建所有按钮
         ESP_LOGI(TAG, "Creating touch buttons...");
         head_touch_button_.CreateButton();
-        hand_touch_button_.CreateButton();
+        nose_touch_button_.CreateButton();
         belly_touch_button_.CreateButton();
         
         ESP_LOGI(TAG, "Touch sensor initialization completed successfully");
@@ -467,22 +467,22 @@ private:
             Application::GetInstance().PostTouchEvent(GetRandomText(head_long_press_texts_));
         });
         
-        hand_touch_button_.OnClick([this]() {
-            ESP_LOGI(TAG, "Hand touch button clicked - Channel: %d", TOUCH_CHANNEL_HAND);
+        nose_touch_button_.OnClick([this]() {
+            ESP_LOGI(TAG, "Nose touch button clicked - Channel: %d", TOUCH_CHANNEL_NOSE);
             if (display_) {
-                display_->ShowNotification(GetRandomText(hand_touch_texts_));
+                display_->ShowNotification(GetRandomText(nose_touch_texts_));
             }
             // 使用新的事件接口
-            Application::GetInstance().PostTouchEvent(GetRandomText(hand_touch_texts_));
+            Application::GetInstance().PostTouchEvent(GetRandomText(nose_touch_texts_));
         });
         
-        hand_touch_button_.OnLongPress([this]() {
-            ESP_LOGI(TAG, "Hand touch button long pressed - Channel: %d", TOUCH_CHANNEL_HAND);
+        nose_touch_button_.OnLongPress([this]() {
+            ESP_LOGI(TAG, "Nose touch button long pressed - Channel: %d", TOUCH_CHANNEL_NOSE);
             if (display_) {
-                display_->ShowNotification(GetRandomText(hand_long_press_texts_));
+                display_->ShowNotification(GetRandomText(nose_long_press_texts_));
             }
             // 使用新的事件接口
-            Application::GetInstance().PostTouchEvent(GetRandomText(hand_long_press_texts_));
+            Application::GetInstance().PostTouchEvent(GetRandomText(nose_long_press_texts_));
         });
         
         belly_touch_button_.OnClick([this]() {
@@ -540,9 +540,9 @@ public:
     volume_down_button_(VOLUME_DOWN_BUTTON_GPIO),
     key1_button_(KEY1_BUTTON_GPIO),
     key2_button_(KEY2_BUTTON_GPIO),
-    head_touch_button_(TOUCH_CHANNEL_HEAD, 0.05f),    // 触摸按钮对象创建
-    hand_touch_button_(TOUCH_CHANNEL_HAND, 0.05f),    // 触摸按钮对象创建
-    belly_touch_button_(TOUCH_CHANNEL_BELLY, 0.05f) { // 触摸按钮对象创建
+    head_touch_button_(TOUCH_CHANNEL_HEAD, 0.15f),    // 触摸按钮对象创建
+    nose_touch_button_(TOUCH_CHANNEL_NOSE, 0.15f),    // 触摸按钮对象创建
+    belly_touch_button_(TOUCH_CHANNEL_BELLY, 0.15f) { // 触摸按钮对象创建
         
         InitializeADC();
         InitializeCodecI2c();

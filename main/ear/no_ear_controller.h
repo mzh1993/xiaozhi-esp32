@@ -61,6 +61,12 @@ public:
     virtual esp_err_t TransitionEmotion(const char* from_emotion, const char* to_emotion, 
                                        uint32_t transition_time_ms) override;
 
+    // 重写耳朵位置管理接口 - 空实现
+    virtual ear_position_t GetEarPosition(bool left_ear) override;
+    virtual esp_err_t SetEarPosition(bool left_ear, ear_position_t position) override;
+    virtual esp_err_t ResetEarsToDefaultPosition() override;
+    virtual esp_err_t EnsureEarsDown() override;
+
 private:
     // 私有方法
     void LogOperation(const char* operation, const char* details = nullptr);

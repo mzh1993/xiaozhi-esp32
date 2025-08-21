@@ -20,6 +20,14 @@ typedef enum {
     EAR_BRAKE = 3           // 刹车
 } ear_direction_t;
 
+// Ear Position Enum - 新增耳朵位置状态
+typedef enum {
+    EAR_POSITION_UNKNOWN = 0,   // 未知位置
+    EAR_POSITION_DOWN = 1,      // 耳朵下垂（默认状态）
+    EAR_POSITION_UP = 2,        // 耳朵竖起
+    EAR_POSITION_MIDDLE = 3     // 耳朵中间位置
+} ear_position_t;
+
 // Ear Speed Enum
 typedef enum {
     EAR_SPEED_SLOW = 1,     // 慢速
@@ -137,6 +145,12 @@ public:
     virtual ear_speed_t GetCurrentSpeed(bool left_ear) = 0;
     virtual bool IsMoving(bool left_ear) = 0;
     virtual bool IsScenarioActive() = 0;
+    
+    // 耳朵位置状态管理接口 - 新增
+    virtual ear_position_t GetEarPosition(bool left_ear) = 0;
+    virtual esp_err_t SetEarPosition(bool left_ear, ear_position_t position) = 0;
+    virtual esp_err_t ResetEarsToDefaultPosition() = 0;
+    virtual esp_err_t EnsureEarsDown() = 0;
 
     // 高级情绪功能
     virtual esp_err_t TriggerByEmotionWithIntensity(const char* emotion, float intensity) = 0;
@@ -166,6 +180,12 @@ protected:
     uint8_t current_loop_count_;
     std::map<std::string, emotion_ear_mapping_t> emotion_mappings_;
     bool initialized_;
+    
+    // 耳朵位置状态跟踪 - 新增
+    ear_position_t left_ear_position_;
+    ear_position_t right_ear_position_;
+    ear_position_t target_left_ear_position_;
+    ear_position_t target_right_ear_position_;
 };
 
 #endif // __cplusplus

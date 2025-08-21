@@ -752,6 +752,10 @@ void Application::SetDeviceState(DeviceState state) {
     auto display = board.GetDisplay();
     auto led = board.GetLed();
     led->OnStateChanged();
+    
+    // 获取耳朵控制器
+    auto ear_controller = board.GetEarController();
+    
     switch (state) {
         case kDeviceStateUnknown:
         case kDeviceStateIdle:
@@ -759,6 +763,12 @@ void Application::SetDeviceState(DeviceState state) {
             display->SetEmotion("neutral");
             audio_service_.EnableVoiceProcessing(false);
             audio_service_.EnableWakeWordDetection(true);
+            
+            // 空闲状态时确保耳朵下垂
+            if (ear_controller) {
+                ESP_LOGI(TAG, "Device entering idle state, ensuring ears are down");
+                ear_controller->EnsureEarsDown();
+            }
             break;
         case kDeviceStateConnecting:
             display->SetStatus(Lang::Strings::CONNECTING);

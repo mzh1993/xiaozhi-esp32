@@ -28,7 +28,7 @@
 
 // 触摸按钮通道定义 - 新增玩具触摸按键（避免与现有功能冲突）
 #define TOUCH_CHANNEL_HEAD      (1) 
-#define TOUCH_CHANNEL_HAND      (2)
+#define TOUCH_CHANNEL_NOSE      (2)  // 改为鼻子触摸
 #define TOUCH_CHANNEL_BELLY     (3) 
 
 #define LAMP_GPIO GPIO_NUM_18

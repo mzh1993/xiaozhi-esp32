@@ -83,6 +83,12 @@ private:
     static ear_movement_step_t excited_steps_[];
     static ear_movement_step_t playful_steps_[];
 
+    // 新增：更自然的情绪场景
+    static ear_movement_step_t gentle_happy_steps_[];
+    static ear_movement_step_t surprised_steps_[];
+    static ear_movement_step_t sleepy_steps_[];
+    static ear_movement_step_t sad_steps_[];
+
     // 默认情绪映射
     static const std::map<std::string, emotion_ear_mapping_t> default_emotion_mappings_;
 };

@@ -4,61 +4,92 @@
 #include "esp_timer.h"
 #include <string.h>
 #include <random>
+#include <algorithm>
 
 static const char *TAG = "TC118S_EAR_CONTROLLER";
 
-// 场景模式定义
+// 场景模式定义 - 优化版本
 ear_movement_step_t Tc118sEarController::peekaboo_steps_[] = {
-    {EAR_FORWARD, EAR_SPEED_NORMAL, 5000, 0}  // 5秒向前
+    {EAR_FORWARD, EAR_SPEED_NORMAL, 2000, 0}  // 缩短到2秒
 };
 
 ear_movement_step_t Tc118sEarController::insect_bite_steps_[] = {
-    {EAR_BACKWARD, EAR_SPEED_VERY_FAST, 200, 100},
-    {EAR_FORWARD, EAR_SPEED_VERY_FAST, 200, 100},
-    {EAR_BACKWARD, EAR_SPEED_VERY_FAST, 200, 100},
-    {EAR_FORWARD, EAR_SPEED_VERY_FAST, 200, 100}
+    {EAR_BACKWARD, EAR_SPEED_VERY_FAST, 150, 100},   // 增加延时，减少抖动
+    {EAR_FORWARD, EAR_SPEED_VERY_FAST, 150, 100},
+    {EAR_BACKWARD, EAR_SPEED_VERY_FAST, 150, 100},
+    {EAR_FORWARD, EAR_SPEED_VERY_FAST, 150, 100},
+    {EAR_BACKWARD, EAR_SPEED_VERY_FAST, 150, 100},
+    {EAR_FORWARD, EAR_SPEED_VERY_FAST, 150, 100}
 };
 
 ear_movement_step_t Tc118sEarController::curious_steps_[] = {
-    {EAR_FORWARD, EAR_SPEED_NORMAL, 1000, 500},
-    {EAR_BACKWARD, EAR_SPEED_NORMAL, 1000, 500}
+    {EAR_FORWARD, EAR_SPEED_NORMAL, 800, 400},    // 增加动作时间和间隔
+    {EAR_BACKWARD, EAR_SPEED_NORMAL, 800, 400},
+    {EAR_FORWARD, EAR_SPEED_SLOW, 600, 300},      // 添加慢速探索
+    {EAR_BACKWARD, EAR_SPEED_SLOW, 600, 300}
 };
 
 ear_movement_step_t Tc118sEarController::excited_steps_[] = {
-    {EAR_FORWARD, EAR_SPEED_FAST, 300, 200},
-    {EAR_BACKWARD, EAR_SPEED_FAST, 300, 200}
+    {EAR_FORWARD, EAR_SPEED_FAST, 300, 200},      // 增加动作时间和间隔
+    {EAR_BACKWARD, EAR_SPEED_FAST, 300, 200},
+    {EAR_FORWARD, EAR_SPEED_VERY_FAST, 200, 150}, // 添加极快摆动
+    {EAR_BACKWARD, EAR_SPEED_VERY_FAST, 200, 150}
 };
 
 ear_movement_step_t Tc118sEarController::playful_steps_[] = {
-    {EAR_FORWARD, EAR_SPEED_NORMAL, 800, 300},
-    {EAR_BACKWARD, EAR_SPEED_FAST, 400, 200},
-    {EAR_FORWARD, EAR_SPEED_VERY_FAST, 200, 100},
-    {EAR_BACKWARD, EAR_SPEED_NORMAL, 600, 400}
+    {EAR_FORWARD, EAR_SPEED_NORMAL, 600, 300},    // 增加动作时间和间隔
+    {EAR_BACKWARD, EAR_SPEED_FAST, 400, 250},
+    {EAR_FORWARD, EAR_SPEED_VERY_FAST, 250, 150},
+    {EAR_BACKWARD, EAR_SPEED_NORMAL, 500, 300},
+    {EAR_FORWARD, EAR_SPEED_SLOW, 400, 250},      // 添加慢速动作
+    {EAR_BACKWARD, EAR_SPEED_FAST, 350, 200}
 };
 
-// 默认情绪映射
+// 新增：更自然的情绪场景
+ear_movement_step_t Tc118sEarController::gentle_happy_steps_[] = {
+    {EAR_FORWARD, EAR_SPEED_SLOW, 1000, 500},      // 温和的开心，增加时间
+    {EAR_BACKWARD, EAR_SPEED_SLOW, 800, 400},
+    {EAR_FORWARD, EAR_SPEED_NORMAL, 600, 300}
+};
+
+ear_movement_step_t Tc118sEarController::surprised_steps_[] = {
+    {EAR_FORWARD, EAR_SPEED_FAST, 400, 0},        // 快速竖起，增加时间
+    {EAR_BACKWARD, EAR_SPEED_SLOW, 1200, 600}     // 缓慢恢复，增加时间
+};
+
+ear_movement_step_t Tc118sEarController::sleepy_steps_[] = {
+    {EAR_BACKWARD, EAR_SPEED_SLOW, 1800, 0},      // 缓慢下垂，增加时间
+    {EAR_FORWARD, EAR_SPEED_SLOW, 600, 1200}      // 轻微抬起再下垂，增加时间
+};
+
+ear_movement_step_t Tc118sEarController::sad_steps_[] = {
+    {EAR_BACKWARD, EAR_SPEED_SLOW, 1500, 0},      // 缓慢下垂，增加时间
+    {EAR_FORWARD, EAR_SPEED_SLOW, 400, 1000}      // 轻微抬起再下垂，增加时间
+};
+
+// 默认情绪映射 - 优化版本
 const std::map<std::string, emotion_ear_mapping_t> Tc118sEarController::default_emotion_mappings_ = {
     {"neutral", {EAR_SCENARIO_NORMAL, 0, true}},
-    {"happy", {EAR_SCENARIO_PLAYFUL, 3000, true}},
-    {"laughing", {EAR_SCENARIO_EXCITED, 4000, true}},
-    {"funny", {EAR_SCENARIO_PLAYFUL, 2500, true}},
-    {"sad", {EAR_SCENARIO_SAD, 0, false}},  // 伤心时耳朵下垂，不自动停止
-    {"angry", {EAR_SCENARIO_ALERT, 2000, true}},
-    {"crying", {EAR_SCENARIO_SAD, 0, false}},  // 哭泣时耳朵下垂
-    {"loving", {EAR_SCENARIO_CURIOUS, 2000, true}},
-    {"embarrassed", {EAR_SCENARIO_SAD, 1500, true}},
-    {"surprised", {EAR_SCENARIO_ALERT, 1000, true}},
-    {"shocked", {EAR_SCENARIO_ALERT, 1500, true}},
-    {"thinking", {EAR_SCENARIO_CURIOUS, 3000, true}},
-    {"winking", {EAR_SCENARIO_PLAYFUL, 1500, true}},
-    {"cool", {EAR_SCENARIO_ALERT, 1000, true}},
+    {"happy", {EAR_SCENARIO_GENTLE_HAPPY, 2000, true}},      // 缩短到2秒
+    {"laughing", {EAR_SCENARIO_EXCITED, 2500, true}},        // 缩短到2.5秒
+    {"funny", {EAR_SCENARIO_PLAYFUL, 1800, true}},           // 缩短到1.8秒
+    {"sad", {EAR_SCENARIO_SAD, 0, false}},                   // 伤心时耳朵下垂，不自动停止
+    {"angry", {EAR_SCENARIO_ALERT, 1500, true}},             // 缩短到1.5秒
+    {"crying", {EAR_SCENARIO_SAD, 0, false}},                // 哭泣时耳朵下垂
+    {"loving", {EAR_SCENARIO_CURIOUS, 1500, true}},          // 缩短到1.5秒
+    {"embarrassed", {EAR_SCENARIO_SAD, 1200, true}},         // 缩短到1.2秒
+    {"surprised", {EAR_SCENARIO_SURPRISED, 1000, true}},     // 缩短到1秒
+    {"shocked", {EAR_SCENARIO_SURPRISED, 1200, true}},       // 缩短到1.2秒
+    {"thinking", {EAR_SCENARIO_CURIOUS, 2000, true}},        // 缩短到2秒
+    {"winking", {EAR_SCENARIO_PLAYFUL, 1200, true}},         // 缩短到1.2秒
+    {"cool", {EAR_SCENARIO_ALERT, 800, true}},               // 缩短到0.8秒
     {"relaxed", {EAR_SCENARIO_NORMAL, 0, true}},
-    {"delicious", {EAR_SCENARIO_EXCITED, 2000, true}},
-    {"kissy", {EAR_SCENARIO_CURIOUS, 1500, true}},
-    {"confident", {EAR_SCENARIO_ALERT, 1000, true}},
-    {"sleepy", {EAR_SCENARIO_SLEEPY, 0, false}},  // 困倦时耳朵下垂
-    {"silly", {EAR_SCENARIO_PLAYFUL, 3000, true}},
-    {"confused", {EAR_SCENARIO_CURIOUS, 2500, true}}
+    {"delicious", {EAR_SCENARIO_EXCITED, 1500, true}},       // 缩短到1.5秒
+    {"kissy", {EAR_SCENARIO_CURIOUS, 1200, true}},           // 缩短到1.2秒
+    {"confident", {EAR_SCENARIO_ALERT, 800, true}},          // 缩短到0.8秒
+    {"sleepy", {EAR_SCENARIO_SLEEPY, 0, false}},             // 困倦时耳朵下垂
+    {"silly", {EAR_SCENARIO_PLAYFUL, 2000, true}},           // 缩短到2秒
+    {"confused", {EAR_SCENARIO_CURIOUS, 1800, true}}         // 缩短到1.8秒
 };
 
 Tc118sEarController::Tc118sEarController(gpio_num_t left_ina_pin, gpio_num_t left_inb_pin,
@@ -247,15 +278,33 @@ esp_err_t Tc118sEarController::MoveTimed(bool left_ear, ear_direction_t directio
         return ESP_ERR_INVALID_STATE;
     }
     
-    // 设置方向和速度
+    // 设置方向
     SetDirection(left_ear, direction);
-    SetSpeed(left_ear, speed);
     
-    // 如果有持续时间，创建定时器来停止耳朵
-    if (duration_ms > 0) {
-        // 使用 FreeRTOS 任务延迟来简化实现
-        // 在实际应用中，这应该使用定时器回调
-        vTaskDelay(pdMS_TO_TICKS(duration_ms));
+    // 简化的速度控制实现，避免频繁GPIO切换
+    if (direction != EAR_STOP && duration_ms > 0) {
+        // 根据速度调整实际运行时间，而不是使用PWM
+        uint32_t actual_duration = duration_ms;
+        
+        switch (speed) {
+            case EAR_SPEED_SLOW:
+                actual_duration = duration_ms * 2;  // 慢速时延长运行时间
+                break;
+            case EAR_SPEED_NORMAL:
+                actual_duration = duration_ms;      // 正常速度
+                break;
+            case EAR_SPEED_FAST:
+                actual_duration = duration_ms * 3 / 4;  // 快速时缩短运行时间
+                break;
+            case EAR_SPEED_VERY_FAST:
+                actual_duration = duration_ms / 2;  // 极快时大幅缩短运行时间
+                break;
+        }
+        
+        // 直接运行指定时间，避免PWM切换
+        vTaskDelay(pdMS_TO_TICKS(actual_duration));
+        
+        // 最终停止
         Stop(left_ear);
     }
     
@@ -284,30 +333,58 @@ esp_err_t Tc118sEarController::PlayScenario(ear_scenario_t scenario) {
             
         case EAR_SCENARIO_INSECT_BITE:
             current_scenario_.steps = insect_bite_steps_;
-            current_scenario_.step_count = 4;
+            current_scenario_.step_count = 6;
             current_scenario_.loop_enabled = true;
             current_scenario_.loop_count = 5;  // 重复5次
             break;
             
         case EAR_SCENARIO_CURIOUS:
             current_scenario_.steps = curious_steps_;
-            current_scenario_.step_count = 2;
+            current_scenario_.step_count = 4;
             current_scenario_.loop_enabled = true;
             current_scenario_.loop_count = 3;
             break;
             
         case EAR_SCENARIO_EXCITED:
             current_scenario_.steps = excited_steps_;
-            current_scenario_.step_count = 2;
+            current_scenario_.step_count = 4;
             current_scenario_.loop_enabled = true;
             current_scenario_.loop_count = 8;
             break;
             
         case EAR_SCENARIO_PLAYFUL:
             current_scenario_.steps = playful_steps_;
-            current_scenario_.step_count = 4;
+            current_scenario_.step_count = 6;
             current_scenario_.loop_enabled = true;
             current_scenario_.loop_count = 4;
+            break;
+            
+        case EAR_SCENARIO_GENTLE_HAPPY:
+            current_scenario_.steps = gentle_happy_steps_;
+            current_scenario_.step_count = 3;
+            current_scenario_.loop_enabled = true;
+            current_scenario_.loop_count = 2;
+            break;
+            
+        case EAR_SCENARIO_SURPRISED:
+            current_scenario_.steps = surprised_steps_;
+            current_scenario_.step_count = 2;
+            current_scenario_.loop_enabled = false;
+            current_scenario_.loop_count = 1;
+            break;
+            
+        case EAR_SCENARIO_SLEEPY:
+            current_scenario_.steps = sleepy_steps_;
+            current_scenario_.step_count = 2;
+            current_scenario_.loop_enabled = false;
+            current_scenario_.loop_count = 1;
+            break;
+            
+        case EAR_SCENARIO_SAD:
+            current_scenario_.steps = sad_steps_;
+            current_scenario_.step_count = 2;
+            current_scenario_.loop_enabled = false;
+            current_scenario_.loop_count = 1;
             break;
             
         default:
@@ -358,8 +435,20 @@ void Tc118sEarController::InternalScenarioTimerCallback(TimerHandle_t timer) {
     // 执行当前步骤
     ear_movement_step_t *step = &current_scenario_.steps[current_step_index_];
     
-    // 应用到双耳
+    // 减少随机性，使动作更稳定
+    static std::random_device rd;
+    static std::mt19937 gen(rd());
+    static std::uniform_int_distribution<> delay_var(-20, 20); // 减少随机延迟范围
+    
+    // 应用到双耳，但添加轻微的时间差，使动作更自然
     MoveTimed(true, step->direction, step->speed, step->duration_ms);
+    
+    // 添加较小的随机延迟，模拟自然的耳朵动作
+    int random_delay = delay_var(gen);
+    if (random_delay > 0) {
+        vTaskDelay(pdMS_TO_TICKS(random_delay));
+    }
+    
     MoveTimed(false, step->direction, step->speed, step->duration_ms);
     
     // 移动到下一步
@@ -376,7 +465,19 @@ void Tc118sEarController::InternalScenarioTimerCallback(TimerHandle_t timer) {
             scenario_active_ = false;
             StopBoth();
             ESP_LOGI(TAG, "Scenario completed");
+        } else {
+            // 循环之间添加较长停顿，使动作更自然
+            vTaskDelay(pdMS_TO_TICKS(300));
         }
+    }
+    
+    // 设置下一步的定时器，增加默认间隔
+    if (scenario_active_) {
+        uint32_t next_delay = step->delay_ms;
+        if (next_delay == 0) {
+            next_delay = 150; // 增加默认间隔到150ms
+        }
+        xTimerChangePeriod(scenario_timer_, pdMS_TO_TICKS(next_delay), 0);
     }
 }
 
@@ -501,3 +602,4 @@ bool Tc118sEarController::IsMoving(bool left_ear) {
 bool Tc118sEarController::IsScenarioActive() {
     return EarController::IsScenarioActive();
 }
+

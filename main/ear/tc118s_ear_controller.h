@@ -70,11 +70,19 @@ private:
     gpio_num_t right_ina_pin_;
     gpio_num_t right_inb_pin_;
 
+    // 情绪状态跟踪
+    std::string current_emotion_;
+    uint64_t last_emotion_time_;
+    bool emotion_action_active_;
+    static const uint32_t EMOTION_COOLDOWN_MS = 3000; // 3秒冷却时间
+
     // 私有方法
     void InitializeDefaultEmotionMappings();
     void SetupScenarioPatterns();
     static void ScenarioTimerCallbackWrapper(TimerHandle_t timer);
     void InternalScenarioTimerCallback(TimerHandle_t timer);
+    bool ShouldTriggerEmotion(const char* emotion);
+    void UpdateEmotionState(const char* emotion);
 
     // 场景模式定义
     static ear_movement_step_t peekaboo_steps_[];

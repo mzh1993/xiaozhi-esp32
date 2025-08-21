@@ -97,7 +97,10 @@ Tc118sEarController::Tc118sEarController(gpio_num_t left_ina_pin, gpio_num_t lef
     : left_ina_pin_(left_ina_pin)
     , left_inb_pin_(left_inb_pin)
     , right_ina_pin_(right_ina_pin)
-    , right_inb_pin_(right_inb_pin) {
+    , right_inb_pin_(right_inb_pin)
+    , current_emotion_("neutral")
+    , last_emotion_time_(0)
+    , emotion_action_active_(false) {
     
     ESP_LOGI(TAG, "TC118S Ear Controller created with pins: L_INA=%d, L_INB=%d, R_INA=%d, R_INB=%d",
              left_ina_pin_, left_inb_pin_, right_ina_pin_, right_inb_pin_);
@@ -463,8 +466,9 @@ void Tc118sEarController::InternalScenarioTimerCallback(TimerHandle_t timer) {
         if (!current_scenario_.loop_enabled || 
             current_loop_count_ >= current_scenario_.loop_count) {
             scenario_active_ = false;
+            emotion_action_active_ = false; // 重置情绪动作状态
             StopBoth();
-            ESP_LOGI(TAG, "Scenario completed");
+            ESP_LOGI(TAG, "Scenario completed, emotion action reset");
         } else {
             // 循环之间添加较长停顿，使动作更自然
             vTaskDelay(pdMS_TO_TICKS(300));
@@ -540,7 +544,48 @@ esp_err_t Tc118sEarController::PlayCustomPattern(ear_movement_step_t *steps,
 }
 
 esp_err_t Tc118sEarController::TriggerByEmotion(const char* emotion) {
-    return EarController::TriggerByEmotion(emotion);
+    ESP_LOGI(TAG, "TriggerByEmotion called with emotion: %s", emotion ? emotion : "null");
+    
+    if (!emotion) {
+        ESP_LOGE(TAG, "TriggerByEmotion: emotion parameter is null");
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    // 检查是否应该触发情绪
+    if (!ShouldTriggerEmotion(emotion)) {
+        ESP_LOGI(TAG, "Emotion trigger skipped for: %s", emotion);
+        return ESP_OK; // 返回成功，但不执行动作
+    }
+    
+    std::string emotion_str(emotion);
+    ESP_LOGI(TAG, "Looking up emotion mapping for: %s", emotion_str.c_str());
+    
+    auto it = emotion_mappings_.find(emotion_str);
+    
+    if (it == emotion_mappings_.end()) {
+        ESP_LOGW(TAG, "Unknown emotion: %s, using neutral", emotion);
+        // 未知情绪使用neutral
+        it = emotion_mappings_.find("neutral");
+        if (it == emotion_mappings_.end()) {
+            ESP_LOGE(TAG, "No neutral emotion mapping found, cannot fallback");
+            return ESP_ERR_NOT_FOUND;
+        }
+    }
+    
+    const emotion_ear_mapping_t& mapping = it->second;
+    ESP_LOGI(TAG, "Found emotion mapping: scenario=%d, duration=%lu ms, auto_stop=%s", 
+             mapping.ear_scenario, mapping.duration_ms, mapping.auto_stop ? "true" : "false");
+    
+    ESP_LOGI(TAG, "Triggering ear action for emotion: %s, scenario: %d, duration: %lu ms", 
+             emotion, mapping.ear_scenario, mapping.duration_ms);
+    
+    // 更新情绪状态
+    UpdateEmotionState(emotion);
+    
+    esp_err_t ret = PlayScenario(mapping.ear_scenario);
+    ESP_LOGI(TAG, "PlayScenario result: %s", (ret == ESP_OK) ? "success" : "failed");
+    
+    return ret;
 }
 
 esp_err_t Tc118sEarController::SetEmotionMapping(const char* emotion, ear_scenario_t scenario, 
@@ -572,7 +617,16 @@ esp_err_t Tc118sEarController::MoveBothTimed(ear_direction_t direction,
 }
 
 esp_err_t Tc118sEarController::StopScenario() {
-    return EarController::StopScenario();
+    if (scenario_active_) {
+        scenario_active_ = false;
+        emotion_action_active_ = false; // 重置情绪动作状态
+        if (scenario_timer_) {
+            xTimerStop(scenario_timer_, 0);
+        }
+        StopBoth();
+        ESP_LOGI(TAG, "Scenario stopped, emotion action reset");
+    }
+    return ESP_OK;
 }
 
 esp_err_t Tc118sEarController::SetCustomScenario(ear_scenario_config_t *config) {
@@ -601,5 +655,41 @@ bool Tc118sEarController::IsMoving(bool left_ear) {
 
 bool Tc118sEarController::IsScenarioActive() {
     return EarController::IsScenarioActive();
+}
+
+bool Tc118sEarController::ShouldTriggerEmotion(const char* emotion) {
+    if (!emotion) {
+        return false;
+    }
+    
+    // 获取当前时间
+    uint64_t current_time = esp_timer_get_time() / 1000; // 转换为毫秒
+    
+    // 如果情绪相同且还在冷却期内，不触发
+    if (current_emotion_ == emotion && 
+        (current_time - last_emotion_time_) < EMOTION_COOLDOWN_MS) {
+        ESP_LOGI(TAG, "Emotion %s still in cooldown, skipping trigger", emotion);
+        return false;
+    }
+    
+    // 如果当前有情绪动作正在进行，不触发新的情绪
+    if (emotion_action_active_) {
+        ESP_LOGI(TAG, "Emotion action already active, skipping trigger for %s", emotion);
+        return false;
+    }
+    
+    return true;
+}
+
+void Tc118sEarController::UpdateEmotionState(const char* emotion) {
+    if (!emotion) {
+        return;
+    }
+    
+    current_emotion_ = emotion;
+    last_emotion_time_ = esp_timer_get_time() / 1000; // 转换为毫秒
+    emotion_action_active_ = true;
+    
+    ESP_LOGI(TAG, "Updated emotion state: %s, time: %llu", emotion, last_emotion_time_);
 }
 

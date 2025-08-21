@@ -67,33 +67,4 @@
 #define RIGHT_EAR_INA_GPIO  GPIO_NUM_17   // 右耳朵电机控制引脚A
 #define RIGHT_EAR_INB_GPIO  GPIO_NUM_18   // 右耳朵电机控制引脚B
 
-// Ear Movement Patterns
-typedef enum {
-    EAR_STOP = 0,           // 停止
-    EAR_FORWARD = 1,        // 向前摆动
-    EAR_BACKWARD = 2,       // 向后摆动
-    EAR_BRAKE = 3           // 刹车
-} ear_direction_t;
-
-typedef enum {
-    EAR_SPEED_SLOW = 1,     // 慢速
-    EAR_SPEED_NORMAL = 2,   // 正常速度
-    EAR_SPEED_FAST = 3,     // 快速
-    EAR_SPEED_VERY_FAST = 4 // 极快速度
-} ear_speed_t;
-
-// Ear Movement Scenarios
-typedef enum {
-    EAR_SCENARIO_NORMAL = 0,        // 正常状态
-    EAR_SCENARIO_PEEKABOO = 1,      // 躲猫猫 - 双耳长时间向前
-    EAR_SCENARIO_INSECT_BITE = 2,   // 蚊虫叮咬 - 单边快速摆动
-    EAR_SCENARIO_CURIOUS = 3,       // 好奇 - 双耳交替摆动
-    EAR_SCENARIO_SLEEPY = 4,        // 困倦 - 缓慢下垂
-    EAR_SCENARIO_EXCITED = 5,       // 兴奋 - 快速摆动
-    EAR_SCENARIO_SAD = 6,           // 伤心 - 耳朵下垂
-    EAR_SCENARIO_ALERT = 7,         // 警觉 - 耳朵竖起
-    EAR_SCENARIO_PLAYFUL = 8,       // 玩耍 - 不规则摆动
-    EAR_SCENARIO_CUSTOM = 9         // 自定义模式
-} ear_scenario_t;
-
 #endif // _BOARD_CONFIG_H_

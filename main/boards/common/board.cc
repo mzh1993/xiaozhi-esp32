@@ -2,6 +2,7 @@
 #include "system_info.h"
 #include "settings.h"
 #include "display/display.h"
+#include "ear/no_ear_controller.h"
 #include "assets/lang_config.h"
 
 #include <esp_log.h>
@@ -59,6 +60,16 @@ Display* Board::GetDisplay() {
 
 Camera* Board::GetCamera() {
     return nullptr;
+}
+
+EarController* Board::GetEarController() {
+    static NoEarController ear_controller;
+    static bool initialized = false;
+    if (!initialized) {
+        ear_controller.Initialize();
+        initialized = true;
+    }
+    return &ear_controller;
 }
 
 Led* Board::GetLed() {

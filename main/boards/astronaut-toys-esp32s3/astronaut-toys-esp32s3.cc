@@ -11,6 +11,8 @@
 #include "../common/lamp_controller.h"
 #include "../common/fan_controller.h"
 #include "led/single_led.h"
+#include "../ear/tc118s_ear_controller.h"
+#include "../ear/no_ear_controller.h"
 #include "assets/lang_config.h"
 
 #include <wifi_station.h>
@@ -76,6 +78,9 @@ private:
     TouchButtonWrapper hand_touch_button_;
     TouchButtonWrapper belly_touch_button_;
 
+    // 耳朵控制器
+    EarController* ear_controller_ = nullptr;
+    
     // 触摸按键文本候选列表
     std::vector<std::string> head_touch_texts_ = {
         "摸摸头~",
@@ -350,6 +355,53 @@ private:
         ESP_LOGI(TAG, "Touch sensor initialization completed successfully");
     }
 
+    void InitializeEarController() {
+        ESP_LOGI(TAG, "=== Starting ear controller initialization ===");
+        ESP_LOGI(TAG, "GPIO pins: L_INA=%d, L_INB=%d, R_INA=%d, R_INB=%d",
+                 LEFT_EAR_INA_GPIO, LEFT_EAR_INB_GPIO, RIGHT_EAR_INA_GPIO, RIGHT_EAR_INB_GPIO);
+        
+        // 创建TC118S耳朵控制器实例
+        ESP_LOGI(TAG, "Creating Tc118sEarController instance");
+        ear_controller_ = new Tc118sEarController(
+            LEFT_EAR_INA_GPIO, LEFT_EAR_INB_GPIO,
+            RIGHT_EAR_INA_GPIO, RIGHT_EAR_INB_GPIO
+        );
+        
+        if (!ear_controller_) {
+            ESP_LOGE(TAG, "Failed to create Tc118sEarController instance");
+            return;
+        }
+        
+        ESP_LOGI(TAG, "Tc118sEarController instance created successfully");
+        
+        // 初始化耳朵控制器
+        ESP_LOGI(TAG, "Calling ear_controller_->Initialize()");
+        esp_err_t ret = ear_controller_->Initialize();
+        ESP_LOGI(TAG, "ear_controller_->Initialize() returned: %s", (ret == ESP_OK) ? "ESP_OK" : "ESP_FAIL");
+        
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to initialize ear controller, switching to NoEarController");
+            delete ear_controller_;
+            
+            ESP_LOGI(TAG, "Creating NoEarController instance as fallback");
+            ear_controller_ = new NoEarController();
+            
+            if (!ear_controller_) {
+                ESP_LOGE(TAG, "Failed to create NoEarController instance");
+                return;
+            }
+            
+            ESP_LOGI(TAG, "Calling NoEarController::Initialize()");
+            ear_controller_->Initialize();
+            ESP_LOGI(TAG, "NoEarController initialization completed");
+        }
+        
+        ESP_LOGI(TAG, "=== Ear controller initialization completed successfully ===");
+        // Note: Cannot use dynamic_cast due to -fno-rtti, but we can track the type during creation
+        ESP_LOGI(TAG, "Final ear controller type: %s", 
+                 (ear_controller_ != nullptr) ? "Valid controller" : "No controller");
+    }
+
     void InitializeButtons() {
         boot_button_.OnClick([this]() {
             power_save_timer_->WakeUp();
@@ -498,6 +550,7 @@ public:
         InitializeTouchSensor();  // 先初始化触摸传感器
         InitializeButtons();      // 再初始化按钮事件
         InitializePowerSaveTimer();
+        InitializeEarController(); // 初始化耳朵控制器
         // InitializeMemoryMonitor();  // 初始化内存监控
         InitializeTools();
     }
@@ -506,6 +559,13 @@ public:
         if (memory_monitor_timer_) {
             esp_timer_stop(memory_monitor_timer_);
             esp_timer_delete(memory_monitor_timer_);
+        }
+        
+        // 清理耳朵控制器内存
+        if (ear_controller_) {
+            ear_controller_->Deinitialize();
+            delete ear_controller_;
+            ear_controller_ = nullptr;
         }
     }
 
@@ -524,6 +584,11 @@ public:
    }
     virtual Display* GetDisplay() override {
         return display_;
+    }
+
+    virtual EarController* GetEarController() override {
+        ESP_LOGI(TAG, "GetEarController called, returning: %s", ear_controller_ ? "valid" : "null");
+        return ear_controller_;
     }
 
     virtual bool GetBatteryLevel(int &level, bool &charging, bool &discharging) {

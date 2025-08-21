@@ -16,7 +16,6 @@
 #include "ota.h"
 #include "audio_service.h"
 #include "device_state_event.h"
-#include "ear_emotion_integration.h"
 
 #define MAIN_EVENT_SCHEDULE (1 << 0)
 #define MAIN_EVENT_SEND_AUDIO (1 << 1)

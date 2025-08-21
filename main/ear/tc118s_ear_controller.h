@@ -57,6 +57,12 @@ public:
     virtual ear_speed_t GetCurrentSpeed(bool left_ear) override;
     virtual bool IsMoving(bool left_ear) override;
     virtual bool IsScenarioActive() override;
+    
+    // 重写耳朵位置状态管理接口 - 新增
+    virtual ear_position_t GetEarPosition(bool left_ear) override;
+    virtual esp_err_t SetEarPosition(bool left_ear, ear_position_t position) override;
+    virtual esp_err_t ResetEarsToDefaultPosition() override;
+    virtual esp_err_t EnsureEarsDown() override;
 
     // 重写高级情绪功能
     virtual esp_err_t TriggerByEmotionWithIntensity(const char* emotion, float intensity) override;
@@ -75,6 +81,12 @@ private:
     uint64_t last_emotion_time_;
     bool emotion_action_active_;
     static const uint32_t EMOTION_COOLDOWN_MS = 3000; // 3秒冷却时间
+    
+    // 耳朵位置状态跟踪 - 新增
+    ear_position_t left_ear_position_;
+    ear_position_t right_ear_position_;
+    ear_position_t target_left_ear_position_;
+    ear_position_t target_right_ear_position_;
 
     // 私有方法
     void InitializeDefaultEmotionMappings();
@@ -83,6 +95,7 @@ private:
     void InternalScenarioTimerCallback(TimerHandle_t timer);
     bool ShouldTriggerEmotion(const char* emotion);
     void UpdateEmotionState(const char* emotion);
+    void SetEarFinalPosition();
 
     // 场景模式定义
     static ear_movement_step_t peekaboo_steps_[];

@@ -63,13 +63,14 @@ Camera* Board::GetCamera() {
 }
 
 EarController* Board::GetEarController() {
-    static NoEarController ear_controller;
+    static NoEarController* ear_controller = nullptr;
     static bool initialized = false;
     if (!initialized) {
-        ear_controller.Initialize();
+        ear_controller = new NoEarController();
+        ear_controller->Initialize();
         initialized = true;
     }
-    return &ear_controller;
+    return ear_controller;
 }
 
 Led* Board::GetLed() {

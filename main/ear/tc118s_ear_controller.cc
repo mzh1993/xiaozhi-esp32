@@ -100,7 +100,11 @@ Tc118sEarController::Tc118sEarController(gpio_num_t left_ina_pin, gpio_num_t lef
     , right_inb_pin_(right_inb_pin)
     , current_emotion_("neutral")
     , last_emotion_time_(0)
-    , emotion_action_active_(false) {
+    , emotion_action_active_(false)
+    , left_ear_position_(EAR_POSITION_DOWN)
+    , right_ear_position_(EAR_POSITION_DOWN)
+    , target_left_ear_position_(EAR_POSITION_DOWN)
+    , target_right_ear_position_(EAR_POSITION_DOWN) {
     
     ESP_LOGI(TAG, "TC118S Ear Controller created with pins: L_INA=%d, L_INB=%d, R_INA=%d, R_INB=%d",
              left_ina_pin_, left_inb_pin_, right_ina_pin_, right_inb_pin_);
@@ -191,11 +195,24 @@ esp_err_t Tc118sEarController::Initialize() {
 }
 
 esp_err_t Tc118sEarController::Deinitialize() {
+    ESP_LOGI(TAG, "Tc118sEarController::Deinitialize called");
+    
     if (!initialized_) {
+        ESP_LOGW(TAG, "Not initialized");
         return ESP_OK;
     }
-
-    ESP_LOGI(TAG, "Deinitializing TC118S ear controller");
+    
+    // 停止所有场景
+    if (scenario_active_) {
+        StopScenario();
+    }
+    
+    // 确保耳朵回到下垂状态
+    ESP_LOGI(TAG, "Ensuring ears are in DOWN position before deinitialization");
+    EnsureEarsDown();
+    
+    // 等待耳朵动作完成
+    vTaskDelay(pdMS_TO_TICKS(1000));
     
     // 停止所有耳朵
     StopBoth();
@@ -467,6 +484,10 @@ void Tc118sEarController::InternalScenarioTimerCallback(TimerHandle_t timer) {
             current_loop_count_ >= current_scenario_.loop_count) {
             scenario_active_ = false;
             emotion_action_active_ = false; // 重置情绪动作状态
+            
+            // 根据场景类型设置耳朵的最终位置
+            SetEarFinalPosition();
+            
             StopBoth();
             ESP_LOGI(TAG, "Scenario completed, emotion action reset");
         } else {
@@ -691,5 +712,122 @@ void Tc118sEarController::UpdateEmotionState(const char* emotion) {
     emotion_action_active_ = true;
     
     ESP_LOGI(TAG, "Updated emotion state: %s, time: %llu", emotion, last_emotion_time_);
+}
+
+// 耳朵位置状态管理方法实现
+ear_position_t Tc118sEarController::GetEarPosition(bool left_ear) {
+    return left_ear ? left_ear_position_ : right_ear_position_;
+}
+
+esp_err_t Tc118sEarController::SetEarPosition(bool left_ear, ear_position_t position) {
+    if (!initialized_) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    
+    ESP_LOGI(TAG, "Setting %s ear position to %d", left_ear ? "left" : "right", position);
+    
+    // 更新目标位置
+    if (left_ear) {
+        target_left_ear_position_ = position;
+    } else {
+        target_right_ear_position_ = position;
+    }
+    
+    // 根据目标位置执行相应的动作
+    if (position == EAR_POSITION_UNKNOWN) {
+        // 未知位置时不执行动作，只更新状态
+        ESP_LOGW(TAG, "Unknown ear position requested, no action taken");
+    } else if (position == EAR_POSITION_DOWN) {
+        // 耳朵下垂 - 向后摆动
+        MoveTimed(left_ear, EAR_BACKWARD, EAR_SPEED_SLOW, 800);
+    } else if (position == EAR_POSITION_UP) {
+        // 耳朵竖起 - 向前摆动
+        MoveTimed(left_ear, EAR_FORWARD, EAR_SPEED_SLOW, 800);
+    } else if (position == EAR_POSITION_MIDDLE) {
+        // 耳朵中间位置 - 根据当前位置调整
+        ear_position_t current_pos = left_ear ? left_ear_position_ : right_ear_position_;
+        if (current_pos == EAR_POSITION_UP) {
+            MoveTimed(left_ear, EAR_BACKWARD, EAR_SPEED_SLOW, 400);
+        } else if (current_pos == EAR_POSITION_DOWN) {
+            MoveTimed(left_ear, EAR_FORWARD, EAR_SPEED_SLOW, 400);
+        }
+    } else {
+        // 处理任何未预期的位置值
+        ESP_LOGW(TAG, "Unexpected ear position value: %d", position);
+    }
+    
+    // 更新实际位置
+    if (left_ear) {
+        left_ear_position_ = position;
+    } else {
+        right_ear_position_ = position;
+    }
+    
+    return ESP_OK;
+}
+
+esp_err_t Tc118sEarController::ResetEarsToDefaultPosition() {
+    ESP_LOGI(TAG, "Resetting ears to default position (DOWN)");
+    
+    // 确保双耳都下垂到默认位置
+    esp_err_t ret1 = SetEarPosition(true, EAR_POSITION_DOWN);
+    esp_err_t ret2 = SetEarPosition(false, EAR_POSITION_DOWN);
+    
+    if (ret1 == ESP_OK && ret2 == ESP_OK) {
+        ESP_LOGI(TAG, "Ears reset to default position successfully");
+        return ESP_OK;
+    } else {
+        ESP_LOGW(TAG, "Failed to reset ears to default position");
+        return ESP_FAIL;
+    }
+}
+
+esp_err_t Tc118sEarController::EnsureEarsDown() {
+    ESP_LOGI(TAG, "Ensuring ears are in DOWN position");
+    
+    // 检查当前耳朵位置，如果不是下垂状态则调整
+    if (left_ear_position_ != EAR_POSITION_DOWN) {
+        SetEarPosition(true, EAR_POSITION_DOWN);
+    }
+    if (right_ear_position_ != EAR_POSITION_DOWN) {
+        SetEarPosition(false, EAR_POSITION_DOWN);
+    }
+    
+    return ESP_OK;
+}
+
+void Tc118sEarController::SetEarFinalPosition() {
+    // 根据当前场景类型设置耳朵的最终位置
+    switch (current_scenario_.scenario) {
+        case EAR_SCENARIO_SAD:
+        case EAR_SCENARIO_SLEEPY:
+            // 伤心和困倦时耳朵下垂
+            ESP_LOGI(TAG, "Setting ears to DOWN position for sad/sleepy scenario");
+            SetEarPosition(true, EAR_POSITION_DOWN);
+            SetEarPosition(false, EAR_POSITION_DOWN);
+            break;
+            
+        case EAR_SCENARIO_ALERT:
+        case EAR_SCENARIO_SURPRISED:
+            // 警觉和惊讶时耳朵竖起
+            ESP_LOGI(TAG, "Setting ears to UP position for alert/surprised scenario");
+            SetEarPosition(true, EAR_POSITION_UP);
+            SetEarPosition(false, EAR_POSITION_UP);
+            break;
+            
+        case EAR_SCENARIO_PEEKABOO:
+            // 躲猫猫时耳朵竖起
+            ESP_LOGI(TAG, "Setting ears to UP position for peekaboo scenario");
+            SetEarPosition(true, EAR_POSITION_UP);
+            SetEarPosition(false, EAR_POSITION_UP);
+            break;
+            
+        default:
+            // 其他场景默认回到下垂状态
+            ESP_LOGI(TAG, "Setting ears to DOWN position for default scenario");
+            SetEarPosition(true, EAR_POSITION_DOWN);
+            SetEarPosition(false, EAR_POSITION_DOWN);
+            break;
+    }
 }
 

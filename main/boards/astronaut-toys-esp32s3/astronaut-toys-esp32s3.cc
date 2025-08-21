@@ -81,6 +81,123 @@ private:
     // 耳朵控制器
     EarController* ear_controller_ = nullptr;
     
+    // 触摸按钮到耳朵动作的映射方法
+    void TriggerEarActionForTouch(const std::string& touch_type, bool is_long_press = false) {
+        if (!ear_controller_) {
+            ESP_LOGW(TAG, "No ear controller available for touch action");
+            return;
+        }
+        
+        ESP_LOGI(TAG, "Triggering ear action for touch: %s, long_press: %s", 
+                 touch_type.c_str(), is_long_press ? "true" : "false");
+        
+        // 根据触摸类型和是否长按选择不同的耳朵动作
+        if (touch_type == "head") {
+            if (is_long_press) {
+                // 长时间摸头 - 温和的开心动作
+                ear_controller_->PlayScenario(EAR_SCENARIO_GENTLE_HAPPY);
+            } else {
+                // 摸头 - 好奇动作
+                ear_controller_->PlayScenario(EAR_SCENARIO_CURIOUS);
+            }
+        } else if (touch_type == "nose") {
+            if (is_long_press) {
+                // 长时间摸鼻子 - 兴奋动作
+                ear_controller_->PlayScenario(EAR_SCENARIO_EXCITED);
+            } else {
+                // 摸鼻子 - 玩耍动作
+                ear_controller_->PlayScenario(EAR_SCENARIO_PLAYFUL);
+            }
+        } else if (touch_type == "belly") {
+            if (is_long_press) {
+                // 长时间摸肚子 - 温和开心动作
+                ear_controller_->PlayScenario(EAR_SCENARIO_GENTLE_HAPPY);
+            } else {
+                // 摸肚子 - 开心动作
+                ear_controller_->PlayScenario(EAR_SCENARIO_PLAYFUL);
+            }
+        }
+    }
+    
+    // 触摸频率跟踪和智能动作映射
+    struct TouchHistory {
+        std::string touch_type;
+        int64_t timestamp;
+        bool is_long_press;
+    };
+    
+    std::vector<TouchHistory> touch_history_;
+    static const int MAX_TOUCH_HISTORY = 10;
+    static const int64_t TOUCH_FREQUENCY_WINDOW_MS = 3000; // 5秒窗口
+    
+    void TriggerSmartEarActionForTouch(const std::string& touch_type, bool is_long_press = false) {
+        if (!ear_controller_) {
+            ESP_LOGW(TAG, "No ear controller available for smart touch action");
+            return;
+        }
+        
+        int64_t current_time = esp_timer_get_time() / 1000; // 转换为毫秒
+        
+        // 记录触摸历史
+        TouchHistory new_touch = {touch_type, current_time, is_long_press};
+        touch_history_.push_back(new_touch);
+        
+        // 保持历史记录在合理范围内
+        if (touch_history_.size() > MAX_TOUCH_HISTORY) {
+            touch_history_.erase(touch_history_.begin());
+        }
+        
+        // 分析触摸模式
+        int recent_touches = 0;
+        int head_touches = 0;
+        int nose_touches = 0;
+        int belly_touches = 0;
+        
+        for (const auto& touch : touch_history_) {
+            if (current_time - touch.timestamp < TOUCH_FREQUENCY_WINDOW_MS) {
+                recent_touches++;
+                if (touch.touch_type == "head") head_touches++;
+                else if (touch.touch_type == "nose") nose_touches++;
+                else if (touch.touch_type == "belly") belly_touches++;
+            }
+        }
+        
+        ESP_LOGI(TAG, "Touch analysis: recent=%d, head=%d, nose=%d, belly=%d", 
+                 recent_touches, head_touches, nose_touches, belly_touches);
+        
+        // 根据触摸模式选择耳朵动作
+        if (recent_touches >= 5) {
+            // 高频触摸 - 兴奋动作
+            ESP_LOGI(TAG, "High frequency touch detected, triggering excited action");
+            ear_controller_->PlayScenario(EAR_SCENARIO_EXCITED);
+        } else if (recent_touches >= 3) {
+            // 中频触摸 - 玩耍动作
+            ESP_LOGI(TAG, "Medium frequency touch detected, triggering playful action");
+            ear_controller_->PlayScenario(EAR_SCENARIO_PLAYFUL);
+        } else {
+            // 低频触摸 - 根据具体位置选择动作
+            if (touch_type == "head") {
+                if (is_long_press) {
+                    ear_controller_->PlayScenario(EAR_SCENARIO_GENTLE_HAPPY);
+                } else {
+                    ear_controller_->PlayScenario(EAR_SCENARIO_CURIOUS);
+                }
+            } else if (touch_type == "nose") {
+                if (is_long_press) {
+                    ear_controller_->PlayScenario(EAR_SCENARIO_EXCITED);
+                } else {
+                    ear_controller_->PlayScenario(EAR_SCENARIO_PLAYFUL);
+                }
+            } else if (touch_type == "belly") {
+                if (is_long_press) {
+                    ear_controller_->PlayScenario(EAR_SCENARIO_GENTLE_HAPPY);
+                } else {
+                    ear_controller_->PlayScenario(EAR_SCENARIO_PLAYFUL);
+                }
+            }
+        }
+    }
+    
     // 触摸按键文本候选列表
     std::vector<std::string> head_touch_texts_ = {
         "哈哈，摸摸你的头哦~",
@@ -455,6 +572,8 @@ private:
             if (display_) {
                 display_->ShowNotification(GetRandomText(head_touch_texts_));
             }
+            // 触发耳朵动作
+            TriggerSmartEarActionForTouch("head", false);
             // 使用新的事件接口，只发送事件，不调用业务逻辑
             Application::GetInstance().PostTouchEvent(GetRandomText(head_touch_texts_));
         });
@@ -464,6 +583,8 @@ private:
             if (display_) {
                 display_->ShowNotification(GetRandomText(head_long_press_texts_));
             }
+            // 触发耳朵动作
+            TriggerSmartEarActionForTouch("head", true);
             // 使用新的事件接口
             Application::GetInstance().PostTouchEvent(GetRandomText(head_long_press_texts_));
         });
@@ -473,6 +594,8 @@ private:
             if (display_) {
                 display_->ShowNotification(GetRandomText(nose_touch_texts_));
             }
+            // 触发耳朵动作
+            TriggerSmartEarActionForTouch("nose", false);
             // 使用新的事件接口
             Application::GetInstance().PostTouchEvent(GetRandomText(nose_touch_texts_));
         });
@@ -482,6 +605,8 @@ private:
             if (display_) {
                 display_->ShowNotification(GetRandomText(nose_long_press_texts_));
             }
+            // 触发耳朵动作
+            TriggerSmartEarActionForTouch("nose", true);
             // 使用新的事件接口
             Application::GetInstance().PostTouchEvent(GetRandomText(nose_long_press_texts_));
         });
@@ -491,6 +616,8 @@ private:
             if (display_) {
                 display_->ShowNotification(GetRandomText(belly_touch_texts_));
             }
+            // 触发耳朵动作
+            TriggerSmartEarActionForTouch("belly", false);
             // 使用新的事件接口
             Application::GetInstance().PostTouchEvent(GetRandomText(belly_touch_texts_));
         });
@@ -500,6 +627,8 @@ private:
             if (display_) {
                 display_->ShowNotification(GetRandomText(belly_long_press_texts_));
             }
+            // 触发耳朵动作
+            TriggerSmartEarActionForTouch("belly", true);
             // 使用新的事件接口
             Application::GetInstance().PostTouchEvent(GetRandomText(belly_long_press_texts_));
         });

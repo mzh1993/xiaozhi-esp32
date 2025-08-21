@@ -198,6 +198,29 @@ esp_err_t NoEarController::TransitionEmotion(const char* from_emotion, const cha
     return ESP_OK;
 }
 
+// 耳朵位置管理接口实现 - 空实现
+ear_position_t NoEarController::GetEarPosition(bool left_ear) {
+    LogOperation("GetEarPosition", left_ear ? "left" : "right");
+    return EAR_POSITION_DOWN; // 默认返回下垂状态
+}
+
+esp_err_t NoEarController::SetEarPosition(bool left_ear, ear_position_t position) {
+    LogOperation("SetEarPosition", 
+                (std::string(left_ear ? "Left" : "Right") + " ear, position " + 
+                 std::to_string(position)).c_str());
+    return ESP_OK;
+}
+
+esp_err_t NoEarController::ResetEarsToDefaultPosition() {
+    LogOperation("ResetEarsToDefaultPosition");
+    return ESP_OK;
+}
+
+esp_err_t NoEarController::EnsureEarsDown() {
+    LogOperation("EnsureEarsDown");
+    return ESP_OK;
+}
+
 void NoEarController::LogOperation(const char* operation, const char* details) {
     if (details) {
         ESP_LOGI(TAG, "[NO-OP] %s: %s", operation, details);

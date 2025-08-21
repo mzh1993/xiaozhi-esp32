@@ -5,9 +5,11 @@
 #include "system_reset.h"
 #include "application.h"
 #include "button.h"
+#include "touch_button_wrapper.h"
 #include "config.h"
 #include "power_save_timer.h"
-#include "iot/thing_manager.h"
+#include "../common/lamp_controller.h"
+#include "../common/fan_controller.h"
 #include "led/single_led.h"
 #include "assets/lang_config.h"
 
@@ -20,6 +22,10 @@
 #include <esp_lcd_panel_ops.h>
 #include <esp_lcd_panel_vendor.h>
 #include <esp_heap_caps.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
+#include <chrono>
+#include <random>
 
 #ifdef SH1106
 #include <esp_lcd_panel_sh1106.h>
@@ -64,6 +70,102 @@ private:
     bool cached_battery_discharging_ = false;
     int64_t last_battery_read_time_ = 0;
     static const int64_t BATTERY_READ_INTERVAL_MS = 60000; // 60秒更新一次
+
+    // 新增玩具触摸按键
+    TouchButtonWrapper head_touch_button_;
+    TouchButtonWrapper hand_touch_button_;
+    TouchButtonWrapper belly_touch_button_;
+
+    // 触摸按键文本候选列表
+    std::vector<std::string> head_touch_texts_ = {
+        "摸摸头~",
+        "好舒服的头~",
+        "摸摸你的小脑袋",
+        "头好痒痒的",
+        "摸摸头，摸摸头",
+        "你的头发软软的",
+        "摸摸你的头发",
+        "头好温暖",
+        "摸摸你的小脑瓜",
+        "头好舒服"
+    };
+    
+    std::vector<std::string> hand_touch_texts_ = {
+        "我们来握手手哦！",
+        "握手手，好朋友",
+        "你的手好温暖",
+        "握手手，拉拉手",
+        "我们来击掌吧！",
+        "握手手，一起玩",
+        "你的手好软",
+        "握手手，好朋友",
+        "我们来拉拉手",
+        "握手手，真开心"
+    };
+    
+    std::vector<std::string> belly_touch_texts_ = {
+        "摸摸肚子~",
+        "肚子好痒痒",
+        "摸摸你的小肚子",
+        "肚子好软软的",
+        "摸摸肚子，好舒服",
+        "你的肚子圆圆的",
+        "摸摸你的小肚皮",
+        "肚子好温暖",
+        "摸摸肚子，真开心",
+        "肚子好舒服"
+    };
+    
+    std::vector<std::string> head_long_press_texts_ = {
+        "长时间摸头~",
+        "摸头摸了好久",
+        "头被摸得好舒服",
+        "长时间摸摸头",
+        "头被摸得痒痒的",
+        "摸头摸得停不下来",
+        "头被摸得好温暖",
+        "长时间摸摸小脑袋",
+        "头被摸得好开心",
+        "摸头摸得好久"
+    };
+    
+    std::vector<std::string> hand_long_press_texts_ = {
+        "我要抢你手上的玩具咯",
+        "你的玩具看起来好好玩",
+        "我也想玩你的玩具",
+        "玩具让我看看",
+        "你的玩具好有趣",
+        "我也想摸摸玩具",
+        "玩具让我玩玩",
+        "你的玩具好漂亮",
+        "我也想玩一下",
+        "玩具让我试试"
+    };
+    
+    std::vector<std::string> belly_long_press_texts_ = {
+        "长时间摸肚子~",
+        "肚子被摸了好久",
+        "摸肚子摸得停不下来",
+        "肚子被摸得好舒服",
+        "长时间摸摸肚子",
+        "肚子被摸得痒痒的",
+        "摸肚子摸得好久",
+        "肚子被摸得好温暖",
+        "长时间摸摸小肚子",
+        "肚子被摸得好开心"
+    };
+
+    // 随机选择文本的辅助函数
+    std::string GetRandomText(const std::vector<std::string>& texts) {
+        if (texts.empty()) {
+            return "摸摸你哦~";
+        }
+        // 使用更好的随机数生成器
+        static std::random_device rd;
+        static std::mt19937 gen(rd());
+        std::uniform_int_distribution<> dis(0, texts.size() - 1);
+        return texts[dis(gen)];
+    }
 
     void InitializeMemoryMonitor() {
         esp_timer_create_args_t timer_args = {
@@ -226,6 +328,28 @@ private:
 #endif // ADC_CALI_SCHEME_CURVE_FITTING_SUPPORTED
     }
 
+    void InitializeTouchSensor() {
+        ESP_LOGI(TAG, "Starting touch sensor initialization...");
+        
+        // 初始化触摸传感器 - 传入所有需要的通道
+        uint32_t touch_channels[] = {TOUCH_CHANNEL_HEAD, TOUCH_CHANNEL_HAND, TOUCH_CHANNEL_BELLY};
+        int channel_count = sizeof(touch_channels) / sizeof(touch_channels[0]);
+        
+        ESP_LOGI(TAG, "Touch channels: HEAD=%d, HAND=%d, BELLY=%d", 
+                 TOUCH_CHANNEL_HEAD, TOUCH_CHANNEL_HAND, TOUCH_CHANNEL_BELLY);
+        
+        TouchButtonWrapper::InitializeTouchSensor(touch_channels, channel_count);
+        TouchButtonWrapper::StartTouchSensor();
+        
+        // 触摸传感器初始化完成后，创建所有按钮
+        ESP_LOGI(TAG, "Creating touch buttons...");
+        head_touch_button_.CreateButton();
+        hand_touch_button_.CreateButton();
+        belly_touch_button_.CreateButton();
+        
+        ESP_LOGI(TAG, "Touch sensor initialization completed successfully");
+    }
+
     void InitializeButtons() {
         boot_button_.OnClick([this]() {
             power_save_timer_->WakeUp();
@@ -272,6 +396,61 @@ private:
             }
         });
 
+        // 新增玩具触摸按键事件处理 - 使用新的事件接口
+        head_touch_button_.OnClick([this]() {
+            ESP_LOGI(TAG, "Head touch button clicked - Channel: %d", TOUCH_CHANNEL_HEAD);
+            if (display_) {
+                display_->ShowNotification(GetRandomText(head_touch_texts_));
+            }
+            // 使用新的事件接口，只发送事件，不调用业务逻辑
+            Application::GetInstance().PostTouchEvent(GetRandomText(head_touch_texts_));
+        });
+        
+        head_touch_button_.OnLongPress([this]() {
+            ESP_LOGI(TAG, "Head touch button long pressed - Channel: %d", TOUCH_CHANNEL_HEAD);
+            if (display_) {
+                display_->ShowNotification(GetRandomText(head_long_press_texts_));
+            }
+            // 使用新的事件接口
+            Application::GetInstance().PostTouchEvent(GetRandomText(head_long_press_texts_));
+        });
+        
+        hand_touch_button_.OnClick([this]() {
+            ESP_LOGI(TAG, "Hand touch button clicked - Channel: %d", TOUCH_CHANNEL_HAND);
+            if (display_) {
+                display_->ShowNotification(GetRandomText(hand_touch_texts_));
+            }
+            // 使用新的事件接口
+            Application::GetInstance().PostTouchEvent(GetRandomText(hand_touch_texts_));
+        });
+        
+        hand_touch_button_.OnLongPress([this]() {
+            ESP_LOGI(TAG, "Hand touch button long pressed - Channel: %d", TOUCH_CHANNEL_HAND);
+            if (display_) {
+                display_->ShowNotification(GetRandomText(hand_long_press_texts_));
+            }
+            // 使用新的事件接口
+            Application::GetInstance().PostTouchEvent(GetRandomText(hand_long_press_texts_));
+        });
+        
+        belly_touch_button_.OnClick([this]() {
+            ESP_LOGI(TAG, "Belly touch button clicked - Channel: %d", TOUCH_CHANNEL_BELLY);
+            if (display_) {
+                display_->ShowNotification(GetRandomText(belly_touch_texts_));
+            }
+            // 使用新的事件接口
+            Application::GetInstance().PostTouchEvent(GetRandomText(belly_touch_texts_));
+        });
+        
+        belly_touch_button_.OnLongPress([this]() {
+            ESP_LOGI(TAG, "Belly touch button long pressed - Channel: %d", TOUCH_CHANNEL_BELLY);
+            if (display_) {
+                display_->ShowNotification(GetRandomText(belly_long_press_texts_));
+            }
+            // 使用新的事件接口
+            Application::GetInstance().PostTouchEvent(GetRandomText(belly_long_press_texts_));
+        });
+
         // // KEY1 按钮
         // key1_button_.OnClick([]() {
         //     auto& app = Application::GetInstance();
@@ -284,23 +463,22 @@ private:
         // });
 
         // // KEY2 按钮
-        // key2_button_.OnClick([]() {
+        // key1_button_.OnClick([]() {
         //     auto& app = Application::GetInstance();
         //     // 处理 KEY2 点击事件
         //     ESP_LOGI(TAG, "KEY2 Clicked - Placeholder action");
         // });
-        // key2_button_.OnDoubleClick([]() {
+        // key1_button_.OnDoubleClick([]() {
         //     auto& app = Application::GetInstance();
         //     // 处理 KEY2 双击事件
         //     ESP_LOGI(TAG, "KEY2 Double Clicked - Placeholder action");
         // });
     }
 
-    void InitializeIot() {
-        auto& thing_manager = iot::ThingManager::GetInstance();
-        thing_manager.AddThing(iot::CreateThing("Speaker"));
-        thing_manager.AddThing(iot::CreateThing("Lamp"));
-        // thing_manager.AddThing(iot::CreateThing("MusicPlayer"));
+    void InitializeTools() {
+        static LampController lamp(LAMP_GPIO);
+        static FanController fan(FAN_GPIO);  // 添加风扇控制器  
+        ESP_LOGI(TAG, "IoT devices initialized with MCP protocol");
     }
 
 public:
@@ -309,14 +487,19 @@ public:
     volume_up_button_(VOLUME_UP_BUTTON_GPIO),
     volume_down_button_(VOLUME_DOWN_BUTTON_GPIO),
     key1_button_(KEY1_BUTTON_GPIO),
-    key2_button_(KEY2_BUTTON_GPIO) {  
+    key2_button_(KEY2_BUTTON_GPIO),
+    head_touch_button_(TOUCH_CHANNEL_HEAD, 0.05f),    // 触摸按钮对象创建
+    hand_touch_button_(TOUCH_CHANNEL_HAND, 0.05f),    // 触摸按钮对象创建
+    belly_touch_button_(TOUCH_CHANNEL_BELLY, 0.05f) { // 触摸按钮对象创建
+        
         InitializeADC();
         InitializeCodecI2c();
         InitializeSsd1306Display();
-        InitializeButtons();
+        InitializeTouchSensor();  // 先初始化触摸传感器
+        InitializeButtons();      // 再初始化按钮事件
         InitializePowerSaveTimer();
         // InitializeMemoryMonitor();  // 初始化内存监控
-        InitializeIot();
+        InitializeTools();
     }
 
     ~AstronautToysESP32S3() {

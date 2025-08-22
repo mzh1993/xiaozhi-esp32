@@ -444,26 +444,19 @@ void Application::Start() {
         } else if (strcmp(type->valuestring, "llm") == 0) {
             auto emotion = cJSON_GetObjectItem(root, "emotion");
             if (cJSON_IsString(emotion)) {
-                ESP_LOGI(TAG, "Received LLM emotion: %s", emotion->valuestring);
                 Schedule([this, display, emotion_str = std::string(emotion->valuestring)]() {
-                    ESP_LOGI(TAG, "Processing LLM emotion in main loop: %s", emotion_str.c_str());
-                    
                     // 检查情绪是否发生变化
                     static std::string last_emotion = "";
                     if (last_emotion != emotion_str) {
                         ESP_LOGI(TAG, "Emotion changed from '%s' to '%s'", last_emotion.c_str(), emotion_str.c_str());
                         last_emotion = emotion_str;
-                        
                         // 更新显示
                         display->SetEmotion(emotion_str.c_str());
-                        
                         // 触发对应的耳朵动作
                         auto ear_controller = Board::GetInstance().GetEarController();
-                        ESP_LOGI(TAG, "Got ear controller: %s", ear_controller ? "valid" : "null");
                         if (ear_controller) {
                             ESP_LOGI(TAG, "Triggering ear emotion: %s", emotion_str.c_str());
-                            esp_err_t ret = ear_controller->TriggerByEmotion(emotion_str.c_str());
-                            ESP_LOGI(TAG, "Ear emotion trigger result: %s", (ret == ESP_OK) ? "success" : "failed");
+                            ear_controller->TriggerEmotion(emotion_str.c_str());
                         } else {
                             ESP_LOGW(TAG, "No ear controller available for emotion: %s", emotion_str.c_str());
                         }
@@ -537,71 +530,7 @@ void Application::Start() {
     ESP_LOGI(TAG, "Getting ear controller for emotion mapping initialization: %s", ear_controller ? "valid" : "null");
     if (ear_controller) {
         ESP_LOGI(TAG, "Starting ear controller emotion mapping initialization");
-        // 设置默认情绪映射
-        esp_err_t ret;
-        
-        ret = ear_controller->SetEmotionMapping("neutral", EAR_SCENARIO_NORMAL, 0);
-        ESP_LOGI(TAG, "Set neutral mapping: %s", (ret == ESP_OK) ? "success" : "failed");
-        
-        ret = ear_controller->SetEmotionMapping("happy", EAR_SCENARIO_PLAYFUL, 3000);
-        ESP_LOGI(TAG, "Set happy mapping: %s", (ret == ESP_OK) ? "success" : "failed");
-        
-        ret = ear_controller->SetEmotionMapping("laughing", EAR_SCENARIO_EXCITED, 4000);
-        ESP_LOGI(TAG, "Set laughing mapping: %s", (ret == ESP_OK) ? "success" : "failed");
-        
-        ret = ear_controller->SetEmotionMapping("funny", EAR_SCENARIO_PLAYFUL, 2500);
-        ESP_LOGI(TAG, "Set funny mapping: %s", (ret == ESP_OK) ? "success" : "failed");
-        
-        ret = ear_controller->SetEmotionMapping("sad", EAR_SCENARIO_SAD, 0);
-        ESP_LOGI(TAG, "Set sad mapping: %s", (ret == ESP_OK) ? "success" : "failed");
-        
-        ret = ear_controller->SetEmotionMapping("angry", EAR_SCENARIO_ALERT, 2000);
-        ESP_LOGI(TAG, "Set angry mapping: %s", (ret == ESP_OK) ? "success" : "failed");
-        
-        ret = ear_controller->SetEmotionMapping("crying", EAR_SCENARIO_SAD, 0);
-        ESP_LOGI(TAG, "Set crying mapping: %s", (ret == ESP_OK) ? "success" : "failed");
-        
-        ret = ear_controller->SetEmotionMapping("loving", EAR_SCENARIO_CURIOUS, 2000);
-        ESP_LOGI(TAG, "Set loving mapping: %s", (ret == ESP_OK) ? "success" : "failed");
-        
-        ret = ear_controller->SetEmotionMapping("embarrassed", EAR_SCENARIO_SAD, 1500);
-        ESP_LOGI(TAG, "Set embarrassed mapping: %s", (ret == ESP_OK) ? "success" : "failed");
-        
-        ret = ear_controller->SetEmotionMapping("surprised", EAR_SCENARIO_ALERT, 1000);
-        ESP_LOGI(TAG, "Set surprised mapping: %s", (ret == ESP_OK) ? "success" : "failed");
-        
-        ret = ear_controller->SetEmotionMapping("shocked", EAR_SCENARIO_ALERT, 1500);
-        ESP_LOGI(TAG, "Set shocked mapping: %s", (ret == ESP_OK) ? "success" : "failed");
-        
-        ret = ear_controller->SetEmotionMapping("thinking", EAR_SCENARIO_CURIOUS, 3000);
-        ESP_LOGI(TAG, "Set thinking mapping: %s", (ret == ESP_OK) ? "success" : "failed");
-        
-        ret = ear_controller->SetEmotionMapping("winking", EAR_SCENARIO_PLAYFUL, 1500);
-        ESP_LOGI(TAG, "Set winking mapping: %s", (ret == ESP_OK) ? "success" : "failed");
-        
-        ret = ear_controller->SetEmotionMapping("cool", EAR_SCENARIO_ALERT, 1000);
-        ESP_LOGI(TAG, "Set cool mapping: %s", (ret == ESP_OK) ? "success" : "failed");
-        
-        ret = ear_controller->SetEmotionMapping("relaxed", EAR_SCENARIO_NORMAL, 0);
-        ESP_LOGI(TAG, "Set relaxed mapping: %s", (ret == ESP_OK) ? "success" : "failed");
-        
-        ret = ear_controller->SetEmotionMapping("delicious", EAR_SCENARIO_EXCITED, 2000);
-        ESP_LOGI(TAG, "Set delicious mapping: %s", (ret == ESP_OK) ? "success" : "failed");
-        
-        ret = ear_controller->SetEmotionMapping("kissy", EAR_SCENARIO_CURIOUS, 1500);
-        ESP_LOGI(TAG, "Set kissy mapping: %s", (ret == ESP_OK) ? "success" : "failed");
-        
-        ret = ear_controller->SetEmotionMapping("confident", EAR_SCENARIO_ALERT, 1000);
-        ESP_LOGI(TAG, "Set confident mapping: %s", (ret == ESP_OK) ? "success" : "failed");
-        
-        ret = ear_controller->SetEmotionMapping("sleepy", EAR_SCENARIO_SLEEPY, 0);
-        ESP_LOGI(TAG, "Set sleepy mapping: %s", (ret == ESP_OK) ? "success" : "failed");
-        
-        ret = ear_controller->SetEmotionMapping("silly", EAR_SCENARIO_PLAYFUL, 3000);
-        ESP_LOGI(TAG, "Set silly mapping: %s", (ret == ESP_OK) ? "success" : "failed");
-        
-        ret = ear_controller->SetEmotionMapping("confused", EAR_SCENARIO_CURIOUS, 2500);
-        ESP_LOGI(TAG, "Set confused mapping: %s", (ret == ESP_OK) ? "success" : "failed");
+        // 情绪映射已在 Tc118sEarController::Initialize() 中自动设置
         
         ESP_LOGI(TAG, "Ear controller emotion mapping initialization completed");
     } else {
@@ -609,7 +538,7 @@ void Application::Start() {
     }
     
     // Print heap stats
-    SystemInfo::PrintHeapStats();
+    SystemInfo::PrintHeapStats(); 
 }
 
 void Application::OnClockTimer() {
@@ -767,7 +696,7 @@ void Application::SetDeviceState(DeviceState state) {
             // 空闲状态时确保耳朵下垂
             if (ear_controller) {
                 ESP_LOGI(TAG, "Device entering idle state, ensuring ears are down");
-                ear_controller->EnsureEarsDown();
+                ear_controller->ResetToDefault();
             }
             break;
         case kDeviceStateConnecting:

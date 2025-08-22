@@ -12,45 +12,59 @@
 extern "C" {
 #endif
 
-// Ear Direction Enum
+// ===== 核心动作定义 =====
+// 单耳基础动作 - 最基本的物理控制
 typedef enum {
-    EAR_STOP = 0,           // 停止
-    EAR_FORWARD = 1,        // 向前摆动
-    EAR_BACKWARD = 2,       // 向后摆动
-    EAR_BRAKE = 3           // 刹车
-} ear_direction_t;
+    EAR_ACTION_STOP = 0,           // 停止
+    EAR_ACTION_FORWARD = 1,        // 向前摆动
+    EAR_ACTION_BACKWARD = 2,       // 向后摆动
+    EAR_ACTION_BRAKE = 3           // 刹车
+} ear_action_t;
 
-// Ear Position Enum - 新增耳朵位置状态
+// 双耳组合动作 - 预定义的常用组合
 typedef enum {
-    EAR_POSITION_UNKNOWN = 0,   // 未知位置
-    EAR_POSITION_DOWN = 1,      // 耳朵下垂（默认状态）
-    EAR_POSITION_UP = 2,        // 耳朵竖起
-    EAR_POSITION_MIDDLE = 3     // 耳朵中间位置
+    // 对称动作（最常用）
+    EAR_COMBO_BOTH_FORWARD = 0,        // 双耳向前
+    EAR_COMBO_BOTH_BACKWARD = 1,       // 双耳向后
+    EAR_COMBO_BOTH_STOP = 2,           // 双耳停止
+    
+    // 单耳动作
+    EAR_COMBO_LEFT_FORWARD_RIGHT_HOLD = 3,    // 左耳向前，右耳保持
+    EAR_COMBO_LEFT_HOLD_RIGHT_FORWARD = 4,    // 左耳保持，右耳向前
+    
+    // 交叉动作
+    EAR_COMBO_LEFT_FORWARD_RIGHT_BACKWARD = 5,  // 左耳向前，右耳向后
+    
+    // 总数
+    EAR_COMBO_COUNT = 6
+} ear_combo_action_t;
+
+// 耳朵位置状态
+typedef enum {
+    EAR_POSITION_DOWN = 0,      // 耳朵下垂（默认状态）
+    EAR_POSITION_UP = 1,        // 耳朵竖起
+    EAR_POSITION_MIDDLE = 2     // 耳朵中间位置
 } ear_position_t;
 
-// Ear Speed Enum
-typedef enum {
-    EAR_SPEED_SLOW = 1,     // 慢速
-    EAR_SPEED_NORMAL = 2,   // 正常速度
-    EAR_SPEED_FAST = 3,     // 快速
-    EAR_SPEED_VERY_FAST = 4 // 极快速度
-} ear_speed_t;
+// ===== 数据结构 =====
+// 单耳动作参数
+typedef struct {
+    ear_action_t action;
+    uint32_t duration_ms;          // 运行时间（毫秒）
+} ear_action_param_t;
 
-// Ear Scenario Enum
-typedef enum {
-    EAR_SCENARIO_NORMAL = 0,        // 正常状态
-    EAR_SCENARIO_PEEKABOO = 1,      // 躲猫猫 - 双耳长时间向前
-    EAR_SCENARIO_INSECT_BITE = 2,   // 蚊虫叮咬 - 单边快速摆动
-    EAR_SCENARIO_CURIOUS = 3,       // 好奇 - 双耳交替摆动
-    EAR_SCENARIO_SLEEPY = 4,        // 困倦 - 缓慢下垂
-    EAR_SCENARIO_EXCITED = 5,       // 兴奋 - 快速摆动
-    EAR_SCENARIO_SAD = 6,           // 伤心 - 耳朵下垂
-    EAR_SCENARIO_ALERT = 7,         // 警觉 - 耳朵竖起
-    EAR_SCENARIO_PLAYFUL = 8,       // 玩耍 - 不规则摆动
-    EAR_SCENARIO_GENTLE_HAPPY = 9,  // 温和开心 - 缓慢摆动
-    EAR_SCENARIO_SURPRISED = 10,    // 惊讶 - 快速竖起后缓慢恢复
-    EAR_SCENARIO_CUSTOM = 11        // 自定义模式
-} ear_scenario_t;
+// 双耳组合动作参数
+typedef struct {
+    ear_combo_action_t combo_action;  // 组合动作类型
+    uint32_t duration_ms;             // 运行时间（毫秒）
+} ear_combo_param_t;
+
+// 动作序列步骤（用于复杂场景）
+typedef struct {
+    ear_combo_action_t combo_action;  // 使用组合动作
+    uint32_t duration_ms;             // 运行时间
+    uint32_t delay_ms;                // 动作间隔
+} ear_sequence_step_t;
 
 #ifdef __cplusplus
 }
@@ -61,131 +75,76 @@ typedef enum {
 
 #include <string>
 #include <map>
+#include <vector>
 
-// Ear Control Structure
+// 耳朵控制结构
 typedef struct {
     gpio_num_t ina_pin;
     gpio_num_t inb_pin;
     bool is_left_ear;
-    ear_direction_t current_direction;
-    ear_speed_t current_speed;
+    ear_action_t current_action;
     bool is_active;
 } ear_control_t;
-
-// Ear Movement Pattern Structure
-typedef struct {
-    ear_direction_t direction;
-    ear_speed_t speed;
-    uint32_t duration_ms;
-    uint32_t delay_ms;
-} ear_movement_step_t;
-
-// Ear Scenario Configuration
-typedef struct {
-    ear_scenario_t scenario;
-    ear_movement_step_t *steps;
-    uint8_t step_count;
-    bool loop_enabled;
-    uint8_t loop_count;
-} ear_scenario_config_t;
-
-// 情绪到耳朵动作的映射结构
-typedef struct {
-    ear_scenario_t ear_scenario;
-    uint32_t duration_ms;
-    bool auto_stop;
-} emotion_ear_mapping_t;
 
 class EarController {
 public:
     EarController();
     virtual ~EarController();
 
-    // 基础控制接口
-    virtual esp_err_t SetDirection(bool left_ear, ear_direction_t direction) = 0;
-    virtual esp_err_t SetSpeed(bool left_ear, ear_speed_t speed) = 0;
-    virtual esp_err_t Stop(bool left_ear) = 0;
-    virtual esp_err_t StopBoth() = 0;
-
-    // 高级控制接口
-    virtual esp_err_t MoveTimed(bool left_ear, ear_direction_t direction, 
-                               ear_speed_t speed, uint32_t duration_ms) = 0;
-    virtual esp_err_t MoveBothTimed(ear_direction_t direction, 
-                                   ear_speed_t speed, uint32_t duration_ms) = 0;
-
-    // 场景控制接口
-    virtual esp_err_t PlayScenario(ear_scenario_t scenario) = 0;
-    virtual esp_err_t PlayScenarioAsync(ear_scenario_t scenario) = 0;
-    virtual esp_err_t StopScenario() = 0;
-
-    // 特定场景接口
-    virtual esp_err_t PeekabooMode(uint32_t duration_ms) = 0;
-    virtual esp_err_t InsectBiteMode(bool left_ear, uint32_t duration_ms) = 0;
-    virtual esp_err_t CuriousMode(uint32_t duration_ms) = 0;
-    virtual esp_err_t SleepyMode() = 0;
-    virtual esp_err_t ExcitedMode(uint32_t duration_ms) = 0;
-    virtual esp_err_t SadMode() = 0;
-    virtual esp_err_t AlertMode() = 0;
-    virtual esp_err_t PlayfulMode(uint32_t duration_ms) = 0;
-
-    // 自定义模式接口
-    virtual esp_err_t PlayCustomPattern(ear_movement_step_t *steps, 
-                                       uint8_t step_count, bool loop) = 0;
-    virtual esp_err_t SetCustomScenario(ear_scenario_config_t *config) = 0;
-
-    // 情绪集成接口
-    virtual esp_err_t TriggerByEmotion(const char* emotion) = 0;
-    virtual esp_err_t SetEmotionMapping(const char* emotion, ear_scenario_t scenario, 
-                                       uint32_t duration_ms) = 0;
-    virtual esp_err_t GetEmotionMapping(const char* emotion, emotion_ear_mapping_t* mapping) = 0;
-    virtual esp_err_t StopEmotionAction() = 0;
-
-    // 状态查询接口
-    virtual ear_direction_t GetCurrentDirection(bool left_ear) = 0;
-    virtual ear_speed_t GetCurrentSpeed(bool left_ear) = 0;
-    virtual bool IsMoving(bool left_ear) = 0;
-    virtual bool IsScenarioActive() = 0;
+    // ===== 核心控制接口 - 简单易用 =====
     
-    // 耳朵位置状态管理接口 - 新增
-    virtual ear_position_t GetEarPosition(bool left_ear) = 0;
+    // 1. 单耳控制（基础功能）
+    virtual esp_err_t MoveEar(bool left_ear, ear_action_param_t action) = 0;
+    virtual esp_err_t StopEar(bool left_ear) = 0;
+    virtual esp_err_t StopBoth() = 0;
+    
+    // 2. 双耳组合控制（常用功能）
+    virtual esp_err_t MoveBoth(ear_combo_param_t combo) = 0;
+    
+    // 3. 位置控制（高级功能）
     virtual esp_err_t SetEarPosition(bool left_ear, ear_position_t position) = 0;
-    virtual esp_err_t ResetEarsToDefaultPosition() = 0;
-    virtual esp_err_t EnsureEarsDown() = 0;
-
-    // 高级情绪功能
-    virtual esp_err_t TriggerByEmotionWithIntensity(const char* emotion, float intensity) = 0;
-    virtual esp_err_t TransitionEmotion(const char* from_emotion, const char* to_emotion, 
-                                       uint32_t transition_time_ms) = 0;
-
-    // 初始化和反初始化接口
+    virtual ear_position_t GetEarPosition(bool left_ear) = 0;
+    virtual esp_err_t ResetToDefault() = 0;
+    
+    // 4. 场景控制（复杂功能）
+    virtual esp_err_t PlaySequence(const ear_sequence_step_t* steps, uint8_t count, bool loop = false) = 0;
+    virtual esp_err_t StopSequence() = 0;
+    
+    // 5. 情绪触发（应用功能）
+    virtual esp_err_t SetEmotion(const char* emotion, const ear_sequence_step_t* steps, uint8_t count) = 0;
+    virtual esp_err_t TriggerEmotion(const char* emotion) = 0;
+    virtual esp_err_t StopEmotion() = 0;
+    
+    // ===== 状态查询接口 =====
+    virtual ear_action_t GetCurrentAction(bool left_ear) = 0;
+    virtual bool IsMoving(bool left_ear) = 0;
+    virtual bool IsSequenceActive() = 0;
+    
+    // ===== 初始化和反初始化接口 =====
     virtual esp_err_t Initialize() = 0;
     virtual esp_err_t Deinitialize() = 0;
 
 protected:
     // 子类需要实现的抽象方法
-    virtual void SetGpioLevels(bool left_ear, ear_direction_t direction) = 0;
-
+    virtual void SetGpioLevels(bool left_ear, ear_action_t action) = 0;
+    
     // 通用功能方法
-    virtual uint32_t SpeedToDelay(ear_speed_t speed);
-    virtual void ApplySpeedControl(bool left_ear, ear_speed_t speed);
-    virtual void ScenarioTimerCallback(TimerHandle_t timer);
-
+    virtual void SequenceTimerCallback(TimerHandle_t timer);
+    
     // 内部状态
     ear_control_t left_ear_;
     ear_control_t right_ear_;
-    bool scenario_active_;
-    TimerHandle_t scenario_timer_;
-    ear_scenario_config_t current_scenario_;
+    bool sequence_active_;
+    TimerHandle_t sequence_timer_;
+    std::vector<ear_sequence_step_t> current_sequence_;
     uint8_t current_step_index_;
     uint8_t current_loop_count_;
-    std::map<std::string, emotion_ear_mapping_t> emotion_mappings_;
+    std::map<std::string, std::vector<ear_sequence_step_t>> emotion_mappings_;
     bool initialized_;
     
-    // 耳朵位置状态跟踪 - 新增
+    // 耳朵位置状态跟踪
     ear_position_t left_ear_position_;
     ear_position_t right_ear_position_;
-    ear_position_t target_left_ear_position_;
-    ear_position_t target_right_ear_position_;
 };
 
 #endif // __cplusplus

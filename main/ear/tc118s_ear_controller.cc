@@ -8,36 +8,36 @@
 
 static const char *TAG = "TC118S_EAR_CONTROLLER";
 
-// 场景模式定义 - 优化版本
+// 场景模式定义 - 使用宏定义参数
 ear_movement_step_t Tc118sEarController::peekaboo_steps_[] = {
-    {EAR_FORWARD, EAR_SPEED_NORMAL, 2000, 0}  // 缩短到2秒
+    {EAR_FORWARD, EAR_SPEED_NORMAL, PEEKABOO_DURATION_MS, 0}
 };
 
 ear_movement_step_t Tc118sEarController::insect_bite_steps_[] = {
-    {EAR_BACKWARD, EAR_SPEED_VERY_FAST, 150, 100},   // 增加延时，减少抖动
-    {EAR_FORWARD, EAR_SPEED_VERY_FAST, 150, 100},
-    {EAR_BACKWARD, EAR_SPEED_VERY_FAST, 150, 100},
-    {EAR_FORWARD, EAR_SPEED_VERY_FAST, 150, 100},
-    {EAR_BACKWARD, EAR_SPEED_VERY_FAST, 150, 100},
-    {EAR_FORWARD, EAR_SPEED_VERY_FAST, 150, 100}
+    {EAR_BACKWARD, EAR_SPEED_VERY_FAST, INSECT_BITE_STEP_TIME_MS, INSECT_BITE_DELAY_MS},
+    {EAR_FORWARD, EAR_SPEED_VERY_FAST, INSECT_BITE_STEP_TIME_MS, INSECT_BITE_DELAY_MS},
+    {EAR_BACKWARD, EAR_SPEED_VERY_FAST, INSECT_BITE_STEP_TIME_MS, INSECT_BITE_DELAY_MS},
+    {EAR_FORWARD, EAR_SPEED_VERY_FAST, INSECT_BITE_STEP_TIME_MS, INSECT_BITE_DELAY_MS},
+    {EAR_BACKWARD, EAR_SPEED_VERY_FAST, INSECT_BITE_STEP_TIME_MS, INSECT_BITE_DELAY_MS},
+    {EAR_FORWARD, EAR_SPEED_VERY_FAST, INSECT_BITE_STEP_TIME_MS, INSECT_BITE_DELAY_MS}
 };
 
 ear_movement_step_t Tc118sEarController::curious_steps_[] = {
-    {EAR_FORWARD, EAR_SPEED_NORMAL, 800, 400},    // 增加动作时间和间隔
-    {EAR_BACKWARD, EAR_SPEED_NORMAL, 800, 400},
+    {EAR_FORWARD, EAR_SPEED_NORMAL, CURIOUS_STEP_TIME_MS, CURIOUS_DELAY_MS},
+    {EAR_BACKWARD, EAR_SPEED_NORMAL, CURIOUS_STEP_TIME_MS, CURIOUS_DELAY_MS},
     {EAR_FORWARD, EAR_SPEED_SLOW, 600, 300},      // 添加慢速探索
     {EAR_BACKWARD, EAR_SPEED_SLOW, 600, 300}
 };
 
 ear_movement_step_t Tc118sEarController::excited_steps_[] = {
-    {EAR_FORWARD, EAR_SPEED_FAST, 300, 200},      // 增加动作时间和间隔
-    {EAR_BACKWARD, EAR_SPEED_FAST, 300, 200},
+    {EAR_FORWARD, EAR_SPEED_FAST, EXCITED_STEP_TIME_MS, EXCITED_DELAY_MS},
+    {EAR_BACKWARD, EAR_SPEED_FAST, EXCITED_STEP_TIME_MS, EXCITED_DELAY_MS},
     {EAR_FORWARD, EAR_SPEED_VERY_FAST, 200, 150}, // 添加极快摆动
     {EAR_BACKWARD, EAR_SPEED_VERY_FAST, 200, 150}
 };
 
 ear_movement_step_t Tc118sEarController::playful_steps_[] = {
-    {EAR_FORWARD, EAR_SPEED_NORMAL, 600, 300},    // 增加动作时间和间隔
+    {EAR_FORWARD, EAR_SPEED_NORMAL, PLAYFUL_STEP_TIME_MS, PLAYFUL_DELAY_MS},
     {EAR_BACKWARD, EAR_SPEED_FAST, 400, 250},
     {EAR_FORWARD, EAR_SPEED_VERY_FAST, 250, 150},
     {EAR_BACKWARD, EAR_SPEED_NORMAL, 500, 300},
@@ -491,8 +491,8 @@ void Tc118sEarController::InternalScenarioTimerCallback(TimerHandle_t timer) {
             StopBoth();
             ESP_LOGI(TAG, "Scenario completed, emotion action reset");
         } else {
-            // 循环之间添加较长停顿，使动作更自然
-            vTaskDelay(pdMS_TO_TICKS(300));
+                    // 循环之间添加较长停顿，使动作更自然
+        vTaskDelay(pdMS_TO_TICKS(SCENARIO_LOOP_DELAY_MS));
         }
     }
     
@@ -500,7 +500,7 @@ void Tc118sEarController::InternalScenarioTimerCallback(TimerHandle_t timer) {
     if (scenario_active_) {
         uint32_t next_delay = step->delay_ms;
         if (next_delay == 0) {
-            next_delay = 150; // 增加默认间隔到150ms
+            next_delay = SCENARIO_DEFAULT_DELAY_MS; // 使用宏定义的默认延时
         }
         xTimerChangePeriod(scenario_timer_, pdMS_TO_TICKS(next_delay), 0);
     }
@@ -739,17 +739,17 @@ esp_err_t Tc118sEarController::SetEarPosition(bool left_ear, ear_position_t posi
         ESP_LOGW(TAG, "Unknown ear position requested, no action taken");
     } else if (position == EAR_POSITION_DOWN) {
         // 耳朵下垂 - 向后摆动
-        MoveTimed(left_ear, EAR_BACKWARD, EAR_SPEED_SLOW, 800);
+        MoveTimed(left_ear, EAR_BACKWARD, EAR_SPEED_SLOW, EAR_POSITION_DOWN_TIME_MS);
     } else if (position == EAR_POSITION_UP) {
         // 耳朵竖起 - 向前摆动
-        MoveTimed(left_ear, EAR_FORWARD, EAR_SPEED_SLOW, 800);
+        MoveTimed(left_ear, EAR_FORWARD, EAR_SPEED_SLOW, EAR_POSITION_UP_TIME_MS);
     } else if (position == EAR_POSITION_MIDDLE) {
         // 耳朵中间位置 - 根据当前位置调整
         ear_position_t current_pos = left_ear ? left_ear_position_ : right_ear_position_;
         if (current_pos == EAR_POSITION_UP) {
-            MoveTimed(left_ear, EAR_BACKWARD, EAR_SPEED_SLOW, 400);
+            MoveTimed(left_ear, EAR_BACKWARD, EAR_SPEED_SLOW, EAR_POSITION_MIDDLE_TIME_MS);
         } else if (current_pos == EAR_POSITION_DOWN) {
-            MoveTimed(left_ear, EAR_FORWARD, EAR_SPEED_SLOW, 400);
+            MoveTimed(left_ear, EAR_FORWARD, EAR_SPEED_SLOW, EAR_POSITION_MIDDLE_TIME_MS);
         }
     } else {
         // 处理任何未预期的位置值
@@ -823,10 +823,10 @@ void Tc118sEarController::SetEarFinalPosition() {
             break;
             
         default:
-            // 其他场景默认回到下垂状态
-            ESP_LOGI(TAG, "Setting ears to DOWN position for default scenario");
-            SetEarPosition(true, EAR_POSITION_DOWN);
-            SetEarPosition(false, EAR_POSITION_DOWN);
+            // 其他场景默认回到中间状态
+            ESP_LOGI(TAG, "Setting ears to DOWN position for middle scenario");
+            SetEarPosition(true, EAR_POSITION_MIDDLE);
+            SetEarPosition(false, EAR_POSITION_MIDDLE);
             break;
     }
 }

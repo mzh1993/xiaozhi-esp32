@@ -568,6 +568,65 @@ private:
                  (ear_controller_ != nullptr) ? "Valid controller" : "No controller");
     }
 
+    void DelayedEarReset() {
+        ESP_LOGI(TAG, "=== Starting delayed ear reset ===");
+        
+        // 创建异步任务来执行耳朵复位，避免阻塞主线程
+        TaskHandle_t reset_task_handle = nullptr;
+        BaseType_t task_created = xTaskCreate(
+            [](void* param) {
+                AstronautToysESP32S3* self = static_cast<AstronautToysESP32S3*>(param);
+                if (self) {
+                    self->ExecuteEarReset();
+                }
+                vTaskDelete(nullptr);
+            },
+            "ear_reset_task",
+            4096,  // 堆栈大小
+            this,  // 传递this指针
+            5,     // 任务优先级
+            &reset_task_handle
+        );
+        
+        if (task_created == pdPASS) {
+            ESP_LOGI(TAG, "Ear reset task created successfully");
+        } else {
+            ESP_LOGW(TAG, "Failed to create ear reset task, executing synchronously");
+            // 如果任务创建失败，同步执行
+            ExecuteEarReset();
+        }
+    }
+    
+    void ExecuteEarReset() {
+        ESP_LOGI(TAG, "=== Executing ear reset ===");
+        
+        // 等待GPIO初始化完成
+        vTaskDelay(pdMS_TO_TICKS(1000)); // 延迟1秒
+        
+        if (ear_controller_) {
+            ESP_LOGI(TAG, "Ensuring ears are in default DOWN position after GPIO initialization");
+            
+            // 首先尝试复位到默认位置
+            esp_err_t reset_ret = ear_controller_->ResetEarsToDefaultPosition();
+            if (reset_ret == ESP_OK) {
+                ESP_LOGI(TAG, "Ears successfully reset to default DOWN position");
+            } else {
+                ESP_LOGW(TAG, "Failed to reset ears to default position, trying EnsureEarsDown");
+                // 如果复位失败，尝试确保耳朵下垂
+                esp_err_t ensure_ret = ear_controller_->EnsureEarsDown();
+                if (ensure_ret == ESP_OK) {
+                    ESP_LOGI(TAG, "Ears successfully ensured to be in DOWN position");
+                } else {
+                    ESP_LOGW(TAG, "Failed to ensure ears are in DOWN position");
+                }
+            }
+        } else {
+            ESP_LOGW(TAG, "No ear controller available for delayed reset");
+        }
+        
+        ESP_LOGI(TAG, "=== Ear reset execution completed ===");
+    }
+
     void InitializeButtons() {
         boot_button_.OnClick([this]() {
             power_save_timer_->WakeUp();
@@ -749,6 +808,10 @@ public:
         InitializeEarController(); // 初始化耳朵控制器
         // InitializeMemoryMonitor();  // 初始化内存监控
         InitializeTools();
+        
+        // 延迟执行耳朵复位，确保GPIO初始化完成
+        ESP_LOGI(TAG, "Scheduling delayed ear reset");
+        DelayedEarReset();
     }
 
     ~AstronautToysESP32S3() {

@@ -4,6 +4,36 @@
 #include "ear_controller.h"
 #include "driver/gpio.h"
 
+// ===== 电机延时参数配置 - 可根据实际电机调整 =====
+// 耳朵位置控制延时参数（单位：毫秒）
+#define EAR_POSITION_DOWN_TIME_MS      800     // 耳朵下垂所需时间
+#define EAR_POSITION_UP_TIME_MS        800     // 耳朵竖起所需时间
+#define EAR_POSITION_MIDDLE_TIME_MS    400     // 耳朵到中间位置所需时间
+
+// 场景动作延时参数
+#define SCENARIO_DEFAULT_DELAY_MS      150     // 场景步骤间默认延时
+#define SCENARIO_LOOP_DELAY_MS         300     // 场景循环间延时
+#define EMOTION_COOLDOWN_MS            3000    // 情绪触发冷却时间
+
+// 速度控制延时参数
+#define SPEED_SLOW_DELAY_MS            50      // 慢速延时
+#define SPEED_NORMAL_DELAY_MS          20      // 正常速度延时
+#define SPEED_FAST_DELAY_MS            10      // 快速延时
+#define SPEED_VERY_FAST_DELAY_MS       5       // 极快延时
+
+// 特殊动作延时参数
+#define PEEKABOO_DURATION_MS           2000    // 躲猫猫模式持续时间
+#define INSECT_BITE_STEP_TIME_MS       150     // 蚊虫叮咬单步时间
+#define INSECT_BITE_DELAY_MS           100     // 蚊虫叮咬步骤间延时
+#define CURIOUS_STEP_TIME_MS           800     // 好奇模式单步时间
+#define CURIOUS_DELAY_MS               400     // 好奇模式步骤间延时
+#define EXCITED_STEP_TIME_MS           300     // 兴奋模式单步时间
+#define EXCITED_DELAY_MS               200     // 兴奋模式步骤间延时
+#define PLAYFUL_STEP_TIME_MS           600     // 玩耍模式单步时间
+#define PLAYFUL_DELAY_MS               300     // 玩耍模式步骤间延时
+
+// ===== 宏定义结束 =====
+
 class Tc118sEarController : public EarController {
 public:
     Tc118sEarController(gpio_num_t left_ina_pin, gpio_num_t left_inb_pin,
@@ -80,7 +110,6 @@ private:
     std::string current_emotion_;
     uint64_t last_emotion_time_;
     bool emotion_action_active_;
-    static const uint32_t EMOTION_COOLDOWN_MS = 3000; // 3秒冷却时间
     
     // 耳朵位置状态跟踪 - 新增
     ear_position_t left_ear_position_;

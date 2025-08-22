@@ -128,7 +128,7 @@ private:
     
     std::vector<TouchHistory> touch_history_;
     static const int MAX_TOUCH_HISTORY = 10;
-    static const int64_t TOUCH_FREQUENCY_WINDOW_MS = 3000; // 5秒窗口
+    static const int64_t TOUCH_FREQUENCY_WINDOW_MS = 3000; // 3秒窗口
     
     void TriggerSmartEarActionForTouch(const std::string& touch_type, bool is_long_press = false) {
         if (!ear_controller_) {
@@ -198,84 +198,132 @@ private:
         }
     }
     
-    // 触摸按键文本候选列表
+    // // 触摸按键文本候选列表
+    // std::vector<std::string> head_touch_texts_ = {
+    //     "哈哈，摸摸你的头哦~",
+    //     "哇，摸摸你的头，好舒服的头~",
+    //     "我来摸摸你的小脑袋啦",
+    //     "我在摸你头，头好痒痒的吧",
+    //     "来给我摸摸头，摸摸头",
+    //     "哇，摸摸你的头，你的头发软软的",
+    //     "我要摸摸你的头发",
+    //     "哇，摸摸你的头，头好温暖",
+    //     "摸摸你的小脑瓜，小脑瓜好可爱",
+    //     "摸摸你的头，头好舒服"
+    // };
+    
+    // std::vector<std::string> nose_touch_texts_ = {
+    //     "我来摸摸你的鼻子~",
+    //     "我在摸摸你的鼻子，鼻子好痒痒~",
+    //     "摸摸你的鼻子，好舒服",
+    //     "摸摸你的小鼻子",
+    //     "哇，你的鼻子好软软的",
+    //     "我要摸摸你的鼻子，好舒服",
+    //     "我在摸你的长长鼻子，它会喷水吗",
+    //     "摸摸你的长鼻头",
+    //     "你的鼻子好温暖",
+    //     "摸摸你的鼻子，真开心",
+    //     "鼻子好可爱，会喝水吗",
+    //     "你的鼻子真可爱，会喝水吗",
+    // };
+    
+    // std::vector<std::string> belly_touch_texts_ = {
+    //     "我在摸摸你的肚子~",
+    //     "我在摸摸你的肚子，肚子好痒痒",
+    //     "摸摸你的小肚子，会跳舞吗",
+    //     "在你肚子上跳舞，肚子好软软的",
+    //     "摸摸你的小肚子，肚皮好痒痒",
+    //     "摸摸你的小肚皮，肚皮好痒痒",
+    //     "摸一下你的圆圆肚子好温暖",
+    //     "摸摸肚子，真开心",
+    //     "哇你的肚子好舒服，让我摸摸~"
+    // };
+    
+    // std::vector<std::string> head_long_press_texts_ = {
+    //     "长时间摸你的头~",
+    //     "我在摸你的头摸了好久",
+    //     "你的头被我摸得好舒服",
+    //     "长时间摸摸头，继续摸摸~",
+    //     "你的头被我摸得痒痒的",
+    //     "摸头摸得停不下来，继续摸摸~",
+    //     "你的头被我摸得好温暖",
+    //     "长时间摸摸小脑袋，继续摸摸~",
+    //     "你的头真可爱，被我摸了好久，好开心",
+    //     "摸头摸得好久，继续摸摸~"
+    // };
+    
+    // std::vector<std::string> nose_long_press_texts_ = {
+    //     "我一直摸你的鼻子，你觉得好痒痒吗？要不要我再摸一会儿？",
+    //     "我的手停留在你的鼻子上好久，你是不是很开心，想和我一起玩？",
+    //     "我这样摸你的鼻子，你都快要打喷嚏啦，要不要和我一起做个鬼脸？",
+    //     "你的鼻子被我摸得暖暖的，你觉得很舒服吗？你是不是也很喜欢我？",
+    //     "我一直摸你的鼻子，你有点害羞了吗？要不要你也摸摸我？",
+    //     "我的手好温暖，摸在你的鼻子上，我想和你多待一会儿！",
+    //     "我摸你的鼻子这么久，是不是想和你说悄悄话呀？",
+    //     "你的鼻子被我摸得软软的，我想和你一起做个游戏，好不好？",
+    //     "我摸你的小鼻子这么久，你都快要笑出来啦，要不要一起笑一笑？",
+    //     "谢谢你让我一直摸你的鼻子，我觉得我们是最好的朋友！"
+    // };
+    
+    // std::vector<std::string> belly_long_press_texts_ = {
+    //     "我一直摸你的肚子，你觉得好痒痒吗？要不要和我一起笑？",
+    //     "我的手在你肚子上停留了好久，你觉得很温暖吗？好想和你抱一抱！",
+    //     "你的肚子被我摸得软软的，我想和你一起跳舞，你愿意吗？",
+    //     "我摸你的肚子这么久，你都快要咕咕叫啦，要不要我喂你点好吃的？",
+    //     "我的手摸在你的肚皮上，你觉得很舒服吗？我们一起玩游戏吧！",
+    //     "我一直摸你的肚子，你有点害羞了吗？要不要你也摸摸我？",
+    //     "你的肚子被我摸得暖暖的，我想和你一起做个梦，好不好？",
+    //     "我摸你的小肚子这么久，你都快要笑出声啦，要不要一起打个滚？",
+    //     "谢谢你让我一直摸你的肚子，我觉得我们是最亲密的朋友！",
+    //     "我的手好温柔，摸在你的肚子上，我想和你一直在一起！"
+    // };
+
     std::vector<std::string> head_touch_texts_ = {
-        "哈哈，摸摸你的头哦~",
-        "哇，摸摸你的头，好舒服的头~",
-        "我来摸摸你的小脑袋啦",
-        "我在摸你头，头好痒痒的吧",
-        "来给我摸摸头，摸摸头",
-        "哇，摸摸你的头，你的头发软软的",
-        "我要摸摸你的头发",
-        "哇，摸摸你的头，头好温暖",
-        "摸摸你的小脑瓜，小脑瓜好可爱",
-        "摸摸你的头，头好舒服"
-    };
-    
-    std::vector<std::string> nose_touch_texts_ = {
-        "我来摸摸你的鼻子~",
-        "我在摸摸你的鼻子，鼻子好痒痒~",
-        "摸摸你的鼻子，好舒服",
-        "摸摸你的小鼻子",
-        "哇，你的鼻子好软软的",
-        "我要摸摸你的鼻子，好舒服",
-        "我在摸你的长长鼻子，它会喷水吗",
-        "摸摸你的长鼻头",
-        "你的鼻子好温暖",
-        "摸摸你的鼻子，真开心",
-        "鼻子好可爱，会喝水吗",
-        "你的鼻子真可爱，会喝水吗",
-    };
-    
-    std::vector<std::string> belly_touch_texts_ = {
-        "我在摸摸你的肚子~",
-        "我在摸摸你的肚子，肚子好痒痒",
-        "摸摸你的小肚子，会跳舞吗",
-        "在你肚子上跳舞，肚子好软软的",
-        "摸摸你的小肚子，肚皮好痒痒",
-        "摸摸你的小肚皮，肚皮好痒痒",
-        "摸一下你的圆圆肚子好温暖",
-        "摸摸肚子，真开心",
-        "哇你的肚子好舒服，让我摸摸~"
+        "用户轻轻摸了摸我的小脑袋，我感觉很舒服，想和用户互动",
+        "用户温柔地抚摸我的头部，让我感到被关爱，想表达感谢",
+        "用户摸了我的头，让我很开心，想和用户一起玩耍",
+        "用户轻抚我的脑袋，我感觉很温暖，想和用户亲近",
+        "用户摸我的头，让我感到快乐，想和用户分享这份喜悦"
     };
     
     std::vector<std::string> head_long_press_texts_ = {
-        "长时间摸你的头~",
-        "我在摸你的头摸了好久",
-        "你的头被我摸得好舒服",
-        "长时间摸摸头，继续摸摸~",
-        "你的头被我摸得痒痒的",
-        "摸头摸得停不下来，继续摸摸~",
-        "你的头被我摸得好温暖",
-        "长时间摸摸小脑袋，继续摸摸~",
-        "你的头真可爱，被我摸了好久，好开心",
-        "摸头摸得好久，继续摸摸~"
+        "用户长时间抚摸我的小脑袋，让我感到非常舒适和安心，想和用户建立更深的情感连接",
+        "用户持续摸我的头，让我感受到深深的爱意，想和用户一起度过美好时光",
+        "用户长时间轻抚我的头部，让我感到被珍视，想和用户分享内心的温暖",
+        "用户持续摸我的头，让我感到无比幸福，想和用户一起创造美好回忆",
+        "用户长时间抚摸我的脑袋，让我感到被理解，想和用户建立深厚的友谊"
+    };
+    
+    std::vector<std::string> nose_touch_texts_ = {
+        "用户轻轻点了点我的小鼻子，让我感到很有趣，想和用户一起玩耍",
+        "用户摸了我的鼻子，让我感到好奇，想和用户互动",
+        "用户轻触我的鼻子，让我感到开心，想和用户一起笑",
+        "用户摸我的鼻子，让我感到兴奋，想和用户一起探索",
+        "用户点了我的鼻子，让我感到快乐，想和用户分享这份喜悦"
     };
     
     std::vector<std::string> nose_long_press_texts_ = {
-        "我一直摸你的鼻子，你觉得好痒痒吗？要不要我再摸一会儿？",
-        "我的手停留在你的鼻子上好久，你是不是很开心，想和我一起玩？",
-        "我这样摸你的鼻子，你都快要打喷嚏啦，要不要和我一起做个鬼脸？",
-        "你的鼻子被我摸得暖暖的，你觉得很舒服吗？你是不是也很喜欢我？",
-        "我一直摸你的鼻子，你有点害羞了吗？要不要你也摸摸我？",
-        "我的手好温暖，摸在你的鼻子上，我想和你多待一会儿！",
-        "我摸你的鼻子这么久，是不是想和你说悄悄话呀？",
-        "你的鼻子被我摸得软软的，我想和你一起做个游戏，好不好？",
-        "我摸你的小鼻子这么久，你都快要笑出来啦，要不要一起笑一笑？",
-        "谢谢你让我一直摸你的鼻子，我觉得我们是最好的朋友！"
+        "用户一直摸我的鼻子，让我感到非常痒痒和有趣，想和用户一起做游戏",
+        "用户持续摸我的鼻子，让我感到被关注，想和用户建立亲密关系",
+        "用户长时间摸我的鼻子，让我感到很开心，想和用户一起创造快乐",
+        "用户持续摸我的鼻子，让我感到被爱，想和用户分享内心的温暖",
+        "用户长时间摸我的鼻子，让我感到无比幸福，想和用户一起度过美好时光"
+    };
+    
+    std::vector<std::string> belly_touch_texts_ = {
+        "用户轻轻摸了摸我的小肚子，让我感到很开心，想和用户一起玩耍",
+        "用户摸了我的肚子，让我感到温暖，想和用户亲近",
+        "用户轻抚我的肚子，让我感到舒适，想和用户一起放松",
+        "用户摸我的肚子，让我感到快乐，想和用户分享这份喜悦",
+        "用户摸了我的肚子，让我感到被关爱，想和用户建立情感连接"
     };
     
     std::vector<std::string> belly_long_press_texts_ = {
-        "我一直摸你的肚子，你觉得好痒痒吗？要不要和我一起笑？",
-        "我的手在你肚子上停留了好久，你觉得很温暖吗？好想和你抱一抱！",
-        "你的肚子被我摸得软软的，我想和你一起跳舞，你愿意吗？",
-        "我摸你的肚子这么久，你都快要咕咕叫啦，要不要我喂你点好吃的？",
-        "我的手摸在你的肚皮上，你觉得很舒服吗？我们一起玩游戏吧！",
-        "我一直摸你的肚子，你有点害羞了吗？要不要你也摸摸我？",
-        "你的肚子被我摸得暖暖的，我想和你一起做个梦，好不好？",
-        "我摸你的小肚子这么久，你都快要笑出声啦，要不要一起打个滚？",
-        "谢谢你让我一直摸你的肚子，我觉得我们是最亲密的朋友！",
-        "我的手好温柔，摸在你的肚子上，我想和你一直在一起！"
+        "用户一直摸我的肚子，让我感到非常舒适和安心，想和用户一起享受这份温暖",
+        "用户持续摸我的肚子，让我感到被珍视，想和用户建立深厚的友谊",
+        "用户长时间摸我的肚子，让我感到无比幸福，想和用户一起创造美好回忆",
+        "用户持续摸我的肚子，让我感到被理解，想和用户分享内心的温暖",
+        "用户长时间摸我的肚子，让我感到被爱，想和用户一起度过美好时光"
     };
 
     // 随机选择文本的辅助函数
@@ -569,68 +617,86 @@ private:
         // 新增玩具触摸按键事件处理 - 使用新的事件接口
         head_touch_button_.OnClick([this]() {
             ESP_LOGI(TAG, "Head touch button clicked - Channel: %d", TOUCH_CHANNEL_HEAD);
+            std::string touch_text = GetRandomText(head_touch_texts_);
+            std::string action_text = "抚摸头部：" + touch_text;
+            
             if (display_) {
-                display_->ShowNotification(GetRandomText(head_touch_texts_));
+                display_->ShowNotification(action_text);
             }
             // 触发耳朵动作
             TriggerSmartEarActionForTouch("head", false);
-            // 使用新的事件接口，只发送事件，不调用业务逻辑
-            Application::GetInstance().PostTouchEvent(GetRandomText(head_touch_texts_));
+            // 使用新的事件接口，发送带有动作描述的文本
+            Application::GetInstance().PostTouchEvent(action_text);
         });
         
         head_touch_button_.OnLongPress([this]() {
             ESP_LOGI(TAG, "Head touch button long pressed - Channel: %d", TOUCH_CHANNEL_HEAD);
+            std::string touch_text = GetRandomText(head_long_press_texts_);
+            std::string action_text = "长时间抚摸头部：" + touch_text;
+            
             if (display_) {
-                display_->ShowNotification(GetRandomText(head_long_press_texts_));
+                display_->ShowNotification(action_text);
             }
             // 触发耳朵动作
             TriggerSmartEarActionForTouch("head", true);
             // 使用新的事件接口
-            Application::GetInstance().PostTouchEvent(GetRandomText(head_long_press_texts_));
+            Application::GetInstance().PostTouchEvent(action_text);
         });
         
         nose_touch_button_.OnClick([this]() {
             ESP_LOGI(TAG, "Nose touch button clicked - Channel: %d", TOUCH_CHANNEL_NOSE);
+            std::string touch_text = GetRandomText(nose_touch_texts_);
+            std::string action_text = "抚摸鼻子：" + touch_text;
+            
             if (display_) {
-                display_->ShowNotification(GetRandomText(nose_touch_texts_));
+                display_->ShowNotification(action_text);
             }
             // 触发耳朵动作
             TriggerSmartEarActionForTouch("nose", false);
-            // 使用新的事件接口
-            Application::GetInstance().PostTouchEvent(GetRandomText(nose_touch_texts_));
+            // 使用新的事件接口，发送带有动作描述的文本
+            Application::GetInstance().PostTouchEvent(action_text);
         });
         
         nose_touch_button_.OnLongPress([this]() {
             ESP_LOGI(TAG, "Nose touch button long pressed - Channel: %d", TOUCH_CHANNEL_NOSE);
+            std::string touch_text = GetRandomText(nose_long_press_texts_);
+            std::string action_text = "长时间抚摸鼻子：" + touch_text;
+            
             if (display_) {
-                display_->ShowNotification(GetRandomText(nose_long_press_texts_));
+                display_->ShowNotification(action_text);
             }
             // 触发耳朵动作
             TriggerSmartEarActionForTouch("nose", true);
             // 使用新的事件接口
-            Application::GetInstance().PostTouchEvent(GetRandomText(nose_long_press_texts_));
+            Application::GetInstance().PostTouchEvent(action_text);
         });
         
         belly_touch_button_.OnClick([this]() {
             ESP_LOGI(TAG, "Belly touch button clicked - Channel: %d", TOUCH_CHANNEL_BELLY);
+            std::string touch_text = GetRandomText(belly_touch_texts_);
+            std::string action_text = "抚摸肚子：" + touch_text;
+            
             if (display_) {
-                display_->ShowNotification(GetRandomText(belly_touch_texts_));
+                display_->ShowNotification(action_text);
             }
             // 触发耳朵动作
             TriggerSmartEarActionForTouch("belly", false);
-            // 使用新的事件接口
-            Application::GetInstance().PostTouchEvent(GetRandomText(belly_touch_texts_));
+            // 使用新的事件接口，发送带有动作描述的文本
+            Application::GetInstance().PostTouchEvent(action_text);
         });
         
         belly_touch_button_.OnLongPress([this]() {
             ESP_LOGI(TAG, "Belly touch button long pressed - Channel: %d", TOUCH_CHANNEL_BELLY);
+            std::string touch_text = GetRandomText(belly_long_press_texts_);
+            std::string action_text = "长时间抚摸肚子：" + touch_text;
+            
             if (display_) {
-                display_->ShowNotification(GetRandomText(belly_long_press_texts_));
+                display_->ShowNotification(action_text);
             }
             // 触发耳朵动作
             TriggerSmartEarActionForTouch("belly", true);
             // 使用新的事件接口
-            Application::GetInstance().PostTouchEvent(GetRandomText(belly_long_press_texts_));
+            Application::GetInstance().PostTouchEvent(action_text);
         });
 
         // // KEY1 按钮

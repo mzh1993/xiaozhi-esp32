@@ -95,26 +95,26 @@ private:
         if (touch_type == "head") {
             if (is_long_press) {
                 // 长时间摸头 - 温和的开心动作
-                ear_controller_->PlayScenario(EAR_SCENARIO_GENTLE_HAPPY);
+                ear_controller_->TriggerEmotion("happy");
             } else {
                 // 摸头 - 好奇动作
-                ear_controller_->PlayScenario(EAR_SCENARIO_CURIOUS);
+                ear_controller_->TriggerEmotion("curious");
             }
         } else if (touch_type == "nose") {
             if (is_long_press) {
                 // 长时间摸鼻子 - 兴奋动作
-                ear_controller_->PlayScenario(EAR_SCENARIO_EXCITED);
+                ear_controller_->TriggerEmotion("excited");
             } else {
                 // 摸鼻子 - 玩耍动作
-                ear_controller_->PlayScenario(EAR_SCENARIO_PLAYFUL);
+                ear_controller_->TriggerEmotion("playful");
             }
         } else if (touch_type == "belly") {
             if (is_long_press) {
                 // 长时间摸肚子 - 温和开心动作
-                ear_controller_->PlayScenario(EAR_SCENARIO_GENTLE_HAPPY);
+                ear_controller_->TriggerEmotion("happy");
             } else {
                 // 摸肚子 - 开心动作
-                ear_controller_->PlayScenario(EAR_SCENARIO_PLAYFUL);
+                ear_controller_->TriggerEmotion("playful");
             }
         }
     }
@@ -169,30 +169,30 @@ private:
         if (recent_touches >= 5) {
             // 高频触摸 - 兴奋动作
             ESP_LOGI(TAG, "High frequency touch detected, triggering excited action");
-            ear_controller_->PlayScenario(EAR_SCENARIO_EXCITED);
+            ear_controller_->TriggerEmotion("excited");
         } else if (recent_touches >= 3) {
             // 中频触摸 - 玩耍动作
             ESP_LOGI(TAG, "Medium frequency touch detected, triggering playful action");
-            ear_controller_->PlayScenario(EAR_SCENARIO_PLAYFUL);
+            ear_controller_->TriggerEmotion("playful");
         } else {
             // 低频触摸 - 根据具体位置选择动作
             if (touch_type == "head") {
                 if (is_long_press) {
-                    ear_controller_->PlayScenario(EAR_SCENARIO_GENTLE_HAPPY);
+                    ear_controller_->TriggerEmotion("happy");
                 } else {
-                    ear_controller_->PlayScenario(EAR_SCENARIO_CURIOUS);
+                    ear_controller_->TriggerEmotion("curious");
                 }
             } else if (touch_type == "nose") {
                 if (is_long_press) {
-                    ear_controller_->PlayScenario(EAR_SCENARIO_EXCITED);
+                    ear_controller_->TriggerEmotion("excited");
                 } else {
-                    ear_controller_->PlayScenario(EAR_SCENARIO_PLAYFUL);
+                    ear_controller_->TriggerEmotion("playful");
                 }
             } else if (touch_type == "belly") {
                 if (is_long_press) {
-                    ear_controller_->PlayScenario(EAR_SCENARIO_GENTLE_HAPPY);
+                    ear_controller_->TriggerEmotion("happy");
                 } else {
-                    ear_controller_->PlayScenario(EAR_SCENARIO_PLAYFUL);
+                    ear_controller_->TriggerEmotion("playful");
                 }
             }
         }
@@ -607,18 +607,11 @@ private:
             ESP_LOGI(TAG, "Ensuring ears are in default DOWN position after GPIO initialization");
             
             // 首先尝试复位到默认位置
-            esp_err_t reset_ret = ear_controller_->ResetEarsToDefaultPosition();
+            esp_err_t reset_ret = ear_controller_->ResetToDefault();
             if (reset_ret == ESP_OK) {
                 ESP_LOGI(TAG, "Ears successfully reset to default DOWN position");
             } else {
-                ESP_LOGW(TAG, "Failed to reset ears to default position, trying EnsureEarsDown");
-                // 如果复位失败，尝试确保耳朵下垂
-                esp_err_t ensure_ret = ear_controller_->EnsureEarsDown();
-                if (ensure_ret == ESP_OK) {
-                    ESP_LOGI(TAG, "Ears successfully ensured to be in DOWN position");
-                } else {
-                    ESP_LOGW(TAG, "Failed to ensure ears are in DOWN position");
-                }
+                ESP_LOGW(TAG, "Failed to reset ears to default position");
             }
         } else {
             ESP_LOGW(TAG, "No ear controller available for delayed reset");

@@ -100,9 +100,7 @@ Tc118sEarController::Tc118sEarController(gpio_num_t left_ina_pin, gpio_num_t lef
     , right_inb_pin_(right_inb_pin)
     , current_emotion_("neutral")
     , last_emotion_time_(0)
-    , emotion_action_active_(false)
-    , left_ear_position_(EAR_POSITION_DOWN)
-    , right_ear_position_(EAR_POSITION_DOWN) {
+    , emotion_action_active_(false) {
     
     ESP_LOGI(TAG, "TC118S Ear Controller created with pins: L_INA=%d, L_INB=%d, R_INA=%d, R_INB=%d",
              left_ina_pin_, left_inb_pin_, right_ina_pin_, right_inb_pin_);
@@ -117,9 +115,10 @@ Tc118sEarController::~Tc118sEarController() {
 esp_err_t Tc118sEarController::Initialize() {
     ESP_LOGI(TAG, "Initializing TC118S ear controller");
     
-    if (initialized_) {
-        ESP_LOGW(TAG, "Already initialized");
-        return ESP_OK;
+    // 调用基类初始化
+    esp_err_t ret = InitializeBase();
+    if (ret != ESP_OK) {
+        return ret;
     }
 
     // 初始化左耳
@@ -153,25 +152,12 @@ esp_err_t Tc118sEarController::Initialize() {
     gpio_set_level(right_ina_pin_, 0);
     gpio_set_level(right_inb_pin_, 0);
     
-    // 创建序列定时器
-    sequence_timer_ = xTimerCreate("ear_sequence_timer", 
-                                 pdMS_TO_TICKS(100), 
-                                 pdTRUE, 
-                                 this, 
-                                 SequenceTimerCallbackWrapper);
-    
-    if (sequence_timer_ == NULL) {
-        ESP_LOGE(TAG, "Failed to create sequence timer");
-        return ESP_ERR_NO_MEM;
-    }
-    
     // 初始化默认情绪映射
     InitializeDefaultEmotionMappings();
     
     // 设置序列模式
     SetupSequencePatterns();
     
-    initialized_ = true;
     ESP_LOGI(TAG, "TC118S ear controller initialized successfully");
     return ESP_OK;
 }
@@ -197,15 +183,8 @@ esp_err_t Tc118sEarController::Deinitialize() {
     // 停止所有耳朵
     StopBoth();
     
-    // 删除定时器
-    if (sequence_timer_ != NULL) {
-        xTimerDelete(sequence_timer_, portMAX_DELAY);
-        sequence_timer_ = NULL;
-    }
-    
-    initialized_ = false;
-    ESP_LOGI(TAG, "TC118S ear controller deinitialized");
-    return ESP_OK;
+    // 调用基类反初始化
+    return DeinitializeBase();
 }
 
 void Tc118sEarController::SetGpioLevels(bool left_ear, ear_action_t action) {
@@ -521,14 +500,7 @@ void Tc118sEarController::SetupSequencePatterns() {
     ESP_LOGI(TAG, "Sequence patterns setup completed");
 }
 
-void Tc118sEarController::SequenceTimerCallbackWrapper(TimerHandle_t timer) {
-    Tc118sEarController* controller = static_cast<Tc118sEarController*>(pvTimerGetTimerID(timer));
-    if (controller) {
-        controller->InternalSequenceTimerCallback(timer);
-    }
-}
-
-void Tc118sEarController::InternalSequenceTimerCallback(TimerHandle_t timer) {
+void Tc118sEarController::OnSequenceTimer(TimerHandle_t timer) {
     if (!sequence_active_ || current_sequence_.empty()) {
         return;
     }
@@ -548,8 +520,8 @@ void Tc118sEarController::InternalSequenceTimerCallback(TimerHandle_t timer) {
         current_step_index_ = 0;
         current_loop_count_++;
         
-        // 检查循环是否完成
-        if (!current_loop_count_ || current_loop_count_ >= 1) {
+        // 检查循环是否完成 - 修复循环逻辑，与基类保持一致
+        if (current_loop_count_ >= 1) { // 1表示执行一次
             sequence_active_ = false;
             emotion_action_active_ = false;
             

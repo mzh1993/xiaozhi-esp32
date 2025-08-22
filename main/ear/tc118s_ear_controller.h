@@ -70,6 +70,9 @@ public:
     virtual ear_action_t GetCurrentAction(bool left_ear) override;
     virtual bool IsMoving(bool left_ear) override;
     virtual bool IsSequenceActive() override;
+    
+    // 重写定时器回调方法
+    virtual void OnSequenceTimer(TimerHandle_t timer) override;
 
 private:
     // GPIO引脚配置
@@ -83,15 +86,11 @@ private:
     uint64_t last_emotion_time_;
     bool emotion_action_active_;
     
-    // 耳朵位置状态跟踪
-    ear_position_t left_ear_position_;
-    ear_position_t right_ear_position_;
+    // 耳朵位置状态跟踪 - 已从基类继承，无需重复声明
 
     // 私有方法
     void InitializeDefaultEmotionMappings();
     void SetupSequencePatterns();
-    static void SequenceTimerCallbackWrapper(TimerHandle_t timer);
-    void InternalSequenceTimerCallback(TimerHandle_t timer);
     bool ShouldTriggerEmotion(const char* emotion);
     void UpdateEmotionState(const char* emotion);
     void SetEarFinalPosition();

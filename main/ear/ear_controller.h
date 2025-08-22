@@ -94,12 +94,12 @@ public:
     // ===== 核心控制接口 - 简单易用 =====
     
     // 1. 单耳控制（基础功能）
-    virtual esp_err_t MoveEar(bool left_ear, ear_action_param_t action) = 0;
-    virtual esp_err_t StopEar(bool left_ear) = 0;
-    virtual esp_err_t StopBoth() = 0;
+    virtual esp_err_t MoveEar(bool left_ear, ear_action_param_t action);  // 移除 = 0，提供默认实现
+    virtual esp_err_t StopEar(bool left_ear);  // 移除 = 0，提供默认实现
+    virtual esp_err_t StopBoth();  // 移除 = 0，提供默认实现
     
     // 2. 双耳组合控制（常用功能）
-    virtual esp_err_t MoveBoth(ear_combo_param_t combo) = 0;
+    virtual esp_err_t MoveBoth(ear_combo_param_t combo);  // 移除 = 0，提供默认实现
     
     // 3. 位置控制（高级功能）
     virtual esp_err_t SetEarPosition(bool left_ear, ear_position_t position) = 0;
@@ -123,6 +123,10 @@ public:
     // ===== 初始化和反初始化接口 =====
     virtual esp_err_t Initialize() = 0;
     virtual esp_err_t Deinitialize() = 0;
+    
+    // 基类提供的通用初始化方法
+    virtual esp_err_t InitializeBase();
+    virtual esp_err_t DeinitializeBase();
 
 protected:
     // 子类需要实现的抽象方法
@@ -130,6 +134,12 @@ protected:
     
     // 通用功能方法
     virtual void SequenceTimerCallback(TimerHandle_t timer);
+    
+    // 子类可以重写的定时器回调方法
+    virtual void OnSequenceTimer(TimerHandle_t timer);
+    
+    // 静态回调包装函数，用于定时器
+    static void StaticSequenceTimerCallback(TimerHandle_t timer);
     
     // 内部状态
     ear_control_t left_ear_;
@@ -142,7 +152,7 @@ protected:
     std::map<std::string, std::vector<ear_sequence_step_t>> emotion_mappings_;
     bool initialized_;
     
-    // 耳朵位置状态跟踪
+    // 耳朵位置状态跟踪 - 基类统一管理
     ear_position_t left_ear_position_;
     ear_position_t right_ear_position_;
 };

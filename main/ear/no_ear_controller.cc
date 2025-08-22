@@ -14,14 +14,12 @@ NoEarController::~NoEarController() {
 
 esp_err_t NoEarController::Initialize() {
     ESP_LOGI(TAG, "NoEarController::Initialize called - no hardware to initialize");
-    initialized_ = true;
-    return ESP_OK;
+    return InitializeBase();
 }
 
 esp_err_t NoEarController::Deinitialize() {
     ESP_LOGI(TAG, "NoEarController::Deinitialize called - no hardware to deinitialize");
-    initialized_ = false;
-    return ESP_OK;
+    return DeinitializeBase();
 }
 
 void NoEarController::SetGpioLevels(bool left_ear, ear_action_t action) {

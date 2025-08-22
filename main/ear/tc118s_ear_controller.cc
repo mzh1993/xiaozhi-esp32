@@ -6,47 +6,47 @@
 
 static const char *TAG = "TC118S_EAR_CONTROLLER";
 
-// 默认情绪序列定义 - 使用新的序列结构
+// 默认情绪序列定义 - 使用延时系数自动计算
 const ear_sequence_step_t Tc118sEarController::happy_sequence_[] = {
-    {EAR_COMBO_BOTH_FORWARD, 400, 200},
-    {EAR_COMBO_BOTH_BACKWARD, 300, 150},
-    {EAR_COMBO_BOTH_FORWARD, 200, 0}
+    {EAR_COMBO_BOTH_FORWARD,  EMOTION_TIME(EAR_POSITION_UP_TIME_MS, EMOTION_NORMAL_RATIO),   EMOTION_GAP(EAR_POSITION_MIDDLE_TIME_MS, EMOTION_GAP_NORMAL_RATIO)},
+    {EAR_COMBO_BOTH_BACKWARD, EMOTION_TIME(EAR_POSITION_DOWN_TIME_MS, EMOTION_NORMAL_RATIO), EMOTION_GAP(EAR_POSITION_MIDDLE_TIME_MS, EMOTION_GAP_QUICK_RATIO)},
+    {EAR_COMBO_BOTH_FORWARD,  EMOTION_TIME(EAR_POSITION_UP_TIME_MS, EMOTION_QUICK_RATIO),    0}
 };
 
 const ear_sequence_step_t Tc118sEarController::curious_sequence_[] = {
-    {EAR_COMBO_LEFT_FORWARD_RIGHT_HOLD, 800, 400},
-    {EAR_COMBO_LEFT_HOLD_RIGHT_FORWARD, 800, 400}
+    {EAR_COMBO_LEFT_FORWARD_RIGHT_HOLD, EMOTION_TIME(EAR_POSITION_UP_TIME_MS, EMOTION_FULL_RATIO),   EMOTION_GAP(EAR_POSITION_MIDDLE_TIME_MS, EMOTION_GAP_FULL_RATIO)},
+    {EAR_COMBO_LEFT_HOLD_RIGHT_FORWARD, EMOTION_TIME(EAR_POSITION_UP_TIME_MS, EMOTION_FULL_RATIO),   EMOTION_GAP(EAR_POSITION_MIDDLE_TIME_MS, EMOTION_GAP_FULL_RATIO)}
 };
 
 const ear_sequence_step_t Tc118sEarController::excited_sequence_[] = {
-    {EAR_COMBO_BOTH_FORWARD, 300, 200},
-    {EAR_COMBO_BOTH_BACKWARD, 300, 200},
-    {EAR_COMBO_BOTH_FORWARD, 200, 150},
-    {EAR_COMBO_BOTH_BACKWARD, 200, 150}
+    {EAR_COMBO_BOTH_FORWARD,  EMOTION_TIME(EAR_POSITION_UP_TIME_MS, EMOTION_QUICK_RATIO),   EMOTION_GAP(EAR_POSITION_MIDDLE_TIME_MS, EMOTION_GAP_NORMAL_RATIO)},
+    {EAR_COMBO_BOTH_BACKWARD, EMOTION_TIME(EAR_POSITION_DOWN_TIME_MS, EMOTION_QUICK_RATIO), EMOTION_GAP(EAR_POSITION_MIDDLE_TIME_MS, EMOTION_GAP_NORMAL_RATIO)},
+    {EAR_COMBO_BOTH_FORWARD,  EMOTION_TIME(EAR_POSITION_UP_TIME_MS, EMOTION_QUICK_RATIO),   EMOTION_GAP(EAR_POSITION_MIDDLE_TIME_MS, EMOTION_GAP_QUICK_RATIO)},
+    {EAR_COMBO_BOTH_BACKWARD, EMOTION_TIME(EAR_POSITION_DOWN_TIME_MS, EMOTION_QUICK_RATIO), 0}
 };
 
 const ear_sequence_step_t Tc118sEarController::playful_sequence_[] = {
-    {EAR_COMBO_BOTH_FORWARD, 600, 300},
-    {EAR_COMBO_BOTH_BACKWARD, 400, 250},
-    {EAR_COMBO_BOTH_FORWARD, 250, 150},
-    {EAR_COMBO_BOTH_BACKWARD, 500, 300},
-    {EAR_COMBO_BOTH_FORWARD, 400, 250},
-    {EAR_COMBO_BOTH_BACKWARD, 350, 200}
+    {EAR_COMBO_BOTH_FORWARD,  EMOTION_TIME(EAR_POSITION_UP_TIME_MS, EMOTION_SLOW_RATIO),    EMOTION_GAP(EAR_POSITION_MIDDLE_TIME_MS, EMOTION_GAP_SLOW_RATIO)},
+    {EAR_COMBO_BOTH_BACKWARD, EMOTION_TIME(EAR_POSITION_DOWN_TIME_MS, EMOTION_NORMAL_RATIO), EMOTION_GAP(EAR_POSITION_MIDDLE_TIME_MS, EMOTION_GAP_NORMAL_RATIO)},
+    {EAR_COMBO_BOTH_FORWARD,  EMOTION_TIME(EAR_POSITION_UP_TIME_MS, EMOTION_QUICK_RATIO),   EMOTION_GAP(EAR_POSITION_MIDDLE_TIME_MS, EMOTION_GAP_QUICK_RATIO)},
+    {EAR_COMBO_BOTH_BACKWARD, EMOTION_TIME(EAR_POSITION_DOWN_TIME_MS, EMOTION_SLOW_RATIO),  EMOTION_GAP(EAR_POSITION_MIDDLE_TIME_MS, EMOTION_GAP_SLOW_RATIO)},
+    {EAR_COMBO_BOTH_FORWARD,  EMOTION_TIME(EAR_POSITION_UP_TIME_MS, EMOTION_NORMAL_RATIO),  EMOTION_GAP(EAR_POSITION_MIDDLE_TIME_MS, EMOTION_GAP_NORMAL_RATIO)},
+    {EAR_COMBO_BOTH_BACKWARD, EMOTION_TIME(EAR_POSITION_DOWN_TIME_MS, EMOTION_NORMAL_RATIO), 0}
 };
 
 const ear_sequence_step_t Tc118sEarController::sad_sequence_[] = {
-    {EAR_COMBO_BOTH_BACKWARD, 600, 0},
-    {EAR_COMBO_BOTH_FORWARD, 200, 500}
+    {EAR_COMBO_BOTH_BACKWARD, EMOTION_TIME(EAR_POSITION_DOWN_TIME_MS, EMOTION_SLOW_RATIO),    0},
+    {EAR_COMBO_BOTH_FORWARD,  EMOTION_TIME(EAR_POSITION_UP_TIME_MS, EMOTION_QUICK_RATIO),    EMOTION_GAP(EAR_POSITION_MIDDLE_TIME_MS, EMOTION_GAP_SLOW_RATIO)}
 };
 
 const ear_sequence_step_t Tc118sEarController::surprised_sequence_[] = {
-    {EAR_COMBO_BOTH_FORWARD, 300, 0},
-    {EAR_COMBO_BOTH_BACKWARD, 600, 300}
+    {EAR_COMBO_BOTH_FORWARD,  EMOTION_TIME(EAR_POSITION_UP_TIME_MS, EMOTION_QUICK_RATIO),    0},
+    {EAR_COMBO_BOTH_BACKWARD, EMOTION_TIME(EAR_POSITION_DOWN_TIME_MS, EMOTION_SLOW_RATIO),   EMOTION_GAP(EAR_POSITION_MIDDLE_TIME_MS, EMOTION_GAP_SLOW_RATIO)}
 };
 
 const ear_sequence_step_t Tc118sEarController::sleepy_sequence_[] = {
-    {EAR_COMBO_BOTH_BACKWARD, 800, 0},
-    {EAR_COMBO_BOTH_FORWARD, 300, 600}
+    {EAR_COMBO_BOTH_BACKWARD, EMOTION_TIME(EAR_POSITION_DOWN_TIME_MS, EMOTION_FULL_RATIO),   0},
+    {EAR_COMBO_BOTH_FORWARD,  EMOTION_TIME(EAR_POSITION_UP_TIME_MS, EMOTION_QUICK_RATIO),    EMOTION_GAP(EAR_POSITION_MIDDLE_TIME_MS, EMOTION_GAP_SLOW_RATIO)}
 };
 
 // 默认情绪映射 - 按类别分组，便于统一调整
@@ -56,40 +56,40 @@ const std::map<std::string, std::vector<ear_sequence_step_t>> Tc118sEarControlle
     {"relaxed", {}},      // 放松：无动作
     
     // ===== 开心类情绪 - 使用 happy_sequence_ =====
-    {"happy", {std::vector<ear_sequence_step_t>(happy_sequence_, happy_sequence_ + 3)}},
+    {"happy", {std::vector<ear_sequence_step_t>(happy_sequence_, happy_sequence_ + sizeof(happy_sequence_)/sizeof(happy_sequence_[0]))}},
     
     // ===== 兴奋类情绪 - 使用 excited_sequence_ =====
-    {"excited", {std::vector<ear_sequence_step_t>(excited_sequence_, excited_sequence_ + 4)}},
-    {"laughing", {std::vector<ear_sequence_step_t>(excited_sequence_, excited_sequence_ + 4)}},  // 大笑：用兴奋序列
-    {"delicious", {std::vector<ear_sequence_step_t>(excited_sequence_, excited_sequence_ + 4)}}, // 美味：用兴奋序列
+    {"excited", {std::vector<ear_sequence_step_t>(excited_sequence_, excited_sequence_ + sizeof(excited_sequence_)/sizeof(excited_sequence_[0]))}},
+    {"laughing", {std::vector<ear_sequence_step_t>(excited_sequence_, excited_sequence_ + sizeof(excited_sequence_)/sizeof(excited_sequence_[0]))}},  // 大笑：用兴奋序列
+    {"delicious", {std::vector<ear_sequence_step_t>(excited_sequence_, excited_sequence_ + sizeof(excited_sequence_)/sizeof(excited_sequence_[0]))}}, // 美味：用兴奋序列
     
     // ===== 顽皮类情绪 - 使用 playful_sequence_ =====
-    {"playful", {std::vector<ear_sequence_step_t>(playful_sequence_, playful_sequence_ + 6)}},
-    {"funny", {std::vector<ear_sequence_step_t>(playful_sequence_, playful_sequence_ + 6)}},     // 有趣：用顽皮序列
-    {"silly", {std::vector<ear_sequence_step_t>(playful_sequence_, playful_sequence_ + 6)}},    // 傻傻的：用顽皮序列
-    {"winking", {std::vector<ear_sequence_step_t>(playful_sequence_, playful_sequence_ + 2)}},  // 眨眼：用顽皮序列前2步
+    {"playful", {std::vector<ear_sequence_step_t>(playful_sequence_, playful_sequence_ + sizeof(playful_sequence_)/sizeof(playful_sequence_[0]))}},
+    {"funny", {std::vector<ear_sequence_step_t>(playful_sequence_, playful_sequence_ + sizeof(playful_sequence_)/sizeof(playful_sequence_[0]))}},     // 有趣：用顽皮序列
+    {"silly", {std::vector<ear_sequence_step_t>(playful_sequence_, playful_sequence_ + sizeof(playful_sequence_)/sizeof(playful_sequence_[0]))}},    // 傻傻的：用顽皮序列
+    {"winking", {std::vector<ear_sequence_step_t>(playful_sequence_, playful_sequence_ + 2)}},  // 眨眼：用顽皮序列前2步（固定长度）
     
     // ===== 悲伤类情绪 - 使用 sad_sequence_ =====
-    {"sad", {std::vector<ear_sequence_step_t>(sad_sequence_, sad_sequence_ + 2)}},
-    {"crying", {std::vector<ear_sequence_step_t>(sad_sequence_, sad_sequence_ + 2)}},           // 哭泣：用悲伤序列
-    {"embarrassed", {std::vector<ear_sequence_step_t>(sad_sequence_, sad_sequence_ + 2)}},     // 尴尬：用悲伤序列
+    {"sad", {std::vector<ear_sequence_step_t>(sad_sequence_, sad_sequence_ + sizeof(sad_sequence_)/sizeof(sad_sequence_[0]))}},
+    {"crying", {std::vector<ear_sequence_step_t>(sad_sequence_, sad_sequence_ + sizeof(sad_sequence_)/sizeof(sad_sequence_[0]))}},           // 哭泣：用悲伤序列
+    {"embarrassed", {std::vector<ear_sequence_step_t>(sad_sequence_, sad_sequence_ + sizeof(sad_sequence_)/sizeof(sad_sequence_[0]))}},     // 尴尬：用悲伤序列
     
     // ===== 惊讶类情绪 - 使用 surprised_sequence_ =====
-    {"surprised", {std::vector<ear_sequence_step_t>(surprised_sequence_, surprised_sequence_ + 2)}},
-    {"shocked", {std::vector<ear_sequence_step_t>(surprised_sequence_, surprised_sequence_ + 2)}}, // 震惊：用惊讶序列
-    {"angry", {std::vector<ear_sequence_step_t>(surprised_sequence_, surprised_sequence_ + 2)}},  // 愤怒：用惊讶序列
-    {"cool", {std::vector<ear_sequence_step_t>(surprised_sequence_, surprised_sequence_ + 2)}},   // 酷：用惊讶序列
-    {"confident", {std::vector<ear_sequence_step_t>(surprised_sequence_, surprised_sequence_ + 2)}}, // 自信：用惊讶序列
+    {"surprised", {std::vector<ear_sequence_step_t>(surprised_sequence_, surprised_sequence_ + sizeof(surprised_sequence_)/sizeof(surprised_sequence_[0]))}},
+    {"shocked", {std::vector<ear_sequence_step_t>(surprised_sequence_, surprised_sequence_ + sizeof(surprised_sequence_)/sizeof(surprised_sequence_[0]))}}, // 震惊：用惊讶序列
+    {"angry", {std::vector<ear_sequence_step_t>(surprised_sequence_, surprised_sequence_ + sizeof(surprised_sequence_)/sizeof(surprised_sequence_[0]))}},  // 愤怒：用惊讶序列
+    {"cool", {std::vector<ear_sequence_step_t>(surprised_sequence_, surprised_sequence_ + sizeof(surprised_sequence_)/sizeof(surprised_sequence_[0]))}},   // 酷：用惊讶序列
+    {"confident", {std::vector<ear_sequence_step_t>(surprised_sequence_, surprised_sequence_ + sizeof(surprised_sequence_)/sizeof(surprised_sequence_[0]))}}, // 自信：用惊讶序列
     
     // ===== 好奇类情绪 - 使用 curious_sequence_ =====
-    {"curious", {std::vector<ear_sequence_step_t>(curious_sequence_, curious_sequence_ + 2)}},
-    {"loving", {std::vector<ear_sequence_step_t>(curious_sequence_, curious_sequence_ + 2)}},    // 爱意：用好奇序列
-    {"thinking", {std::vector<ear_sequence_step_t>(curious_sequence_, curious_sequence_ + 2)}},  // 思考：用好奇序列
-    {"kissy", {std::vector<ear_sequence_step_t>(curious_sequence_, curious_sequence_ + 2)}},     // 亲吻：用好奇序列
-    {"confused", {std::vector<ear_sequence_step_t>(curious_sequence_, curious_sequence_ + 2)}},  // 困惑：用好奇序列
+    {"curious", {std::vector<ear_sequence_step_t>(curious_sequence_, curious_sequence_ + sizeof(curious_sequence_)/sizeof(curious_sequence_[0]))}},
+    {"loving", {std::vector<ear_sequence_step_t>(curious_sequence_, curious_sequence_ + sizeof(curious_sequence_)/sizeof(curious_sequence_[0]))}},    // 爱意：用好奇序列
+    {"thinking", {std::vector<ear_sequence_step_t>(curious_sequence_, curious_sequence_ + sizeof(curious_sequence_)/sizeof(curious_sequence_[0]))}},  // 思考：用好奇序列
+    {"kissy", {std::vector<ear_sequence_step_t>(curious_sequence_, curious_sequence_ + sizeof(curious_sequence_)/sizeof(curious_sequence_[0]))}},     // 亲吻：用好奇序列
+    {"confused", {std::vector<ear_sequence_step_t>(curious_sequence_, curious_sequence_ + sizeof(curious_sequence_)/sizeof(curious_sequence_[0]))}},  // 困惑：用好奇序列
     
     // ===== 特殊情绪 - 使用独立序列 =====
-    {"sleepy", {std::vector<ear_sequence_step_t>(sleepy_sequence_, sleepy_sequence_ + 2)}},     // 困倦：独特的下垂动作
+    {"sleepy", {std::vector<ear_sequence_step_t>(sleepy_sequence_, sleepy_sequence_ + sizeof(sleepy_sequence_)/sizeof(sleepy_sequence_[0]))}},     // 困倦：独特的下垂动作
 };
 
 Tc118sEarController::Tc118sEarController(gpio_num_t left_ina_pin, gpio_num_t left_inb_pin,

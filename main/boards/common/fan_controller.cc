@@ -35,9 +35,9 @@ FanController::FanController(gpio_num_t button_gpio, gpio_num_t pwm_gpio, ledc_c
         "fan_ctrl",
         2048,
         this,
-        4,  // 优先级4，高于主循环
+        2,  // 降低优先级到2，避免与音频处理竞争
         &control_task_,
-        0   // 核心0
+        1   // 迁移到核心1，避免与音频编解码竞争
     );
     
     if (ret != pdPASS) {
@@ -53,9 +53,9 @@ FanController::FanController(gpio_num_t button_gpio, gpio_num_t pwm_gpio, ledc_c
         "fan_btn",
         2048,
         this,
-        5,  // 优先级5，最高优先级
+        3,  // 降低优先级到3，避免与音频处理竞争
         &button_task_,
-        0   // 核心0
+        1   // 迁移到核心1，避免与音频编解码竞争
     );
     
     if (ret != pdPASS) {
@@ -172,7 +172,7 @@ void FanController::ButtonISR() {
 }
 
 void FanController::ButtonTask() {
-    const TickType_t xDelay = pdMS_TO_TICKS(10);  // 10ms检测间隔
+    const TickType_t xDelay = pdMS_TO_TICKS(50);  // 50ms检测间隔（进一步降低频率）
     const uint64_t LONG_PRESS_TIME = 2000000;     // 2秒长按时间
     const uint64_t DEBOUNCE_TIME = 100000;        // 100ms防抖时间（增加防抖时间）
     const uint64_t MIN_PRESS_TIME = 50000;        // 50ms最小按压时间
@@ -189,7 +189,7 @@ void FanController::ButtonTask() {
             
             // 检测长按
             if (press_duration > LONG_PRESS_TIME) {
-                ESP_LOGI(TAG, "Long press detected, duration: %llu ms", press_duration / 1000);
+                ESP_LOGD(TAG, "Long press detected, duration: %llu ms", press_duration / 1000);
                 HandleButtonLongPress();
                 // 等待按键释放
                 while (button_pressed_.load()) {
@@ -211,7 +211,7 @@ void FanController::ButtonTask() {
                 (release_time - press_time) > MIN_PRESS_TIME &&
                 (release_time - press_time) < DEBOUNCE_TIME) {
                 
-                ESP_LOGI(TAG, "Short press detected, duration: %llu ms", (release_time - press_time) / 1000);
+                ESP_LOGD(TAG, "Short press detected, duration: %llu ms", (release_time - press_time) / 1000);
                 HandleButtonPress();
                 last_press_time = current_time;
             }
@@ -246,7 +246,8 @@ void FanController::ProcessCommand(const FanControlRequest& request) {
     
     std::lock_guard<std::mutex> lock(control_mutex_);
     
-    ESP_LOGI(TAG, "Processing command: %d, percentage: %d, from_voice: %s", 
+    // 减少日志输出，只在调试模式下输出详细信息
+    ESP_LOGD(TAG, "Processing command: %d, percentage: %d, from_voice: %s", 
               static_cast<int>(request.command), request.percentage, 
               request.from_voice ? "true" : "false");
     

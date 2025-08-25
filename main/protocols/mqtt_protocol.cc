@@ -185,7 +185,7 @@ bool MqttProtocol::OpenAudioChannel() {
 
     std::lock_guard<std::mutex> lock(channel_mutex_);
     auto network = Board::GetInstance().GetNetwork();
-    udp_ = network->CreateUdp(2);
+    udp_ = network->CreateUdp(4);  // 增加UDP缓冲区大小
     udp_->OnMessage([this](const std::string& data) {
         /*
          * UDP Encrypted OPUS Packet Format:
@@ -207,11 +207,14 @@ bool MqttProtocol::OpenAudioChannel() {
             return;
         }
         if (sequence != remote_sequence_ + 1) {
-            ESP_LOGW(TAG, "Received audio packet with wrong sequence: %lu, expected: %lu (gap: %ld)", 
-                     sequence, remote_sequence_ + 1, sequence - remote_sequence_ - 1);
+            uint32_t gap = sequence - remote_sequence_ - 1;
+            ESP_LOGW(TAG, "Received audio packet with wrong sequence: %lu, expected: %lu (gap: %lu)", 
+                     sequence, remote_sequence_ + 1, gap);
             // 如果序列号跳跃太大，可能是网络问题，记录更详细的警告
-            if (sequence - remote_sequence_ > 10) {
-                ESP_LOGW(TAG, "Large sequence gap detected, possible network issues");
+            if (gap > 10) {
+                ESP_LOGW(TAG, "Large sequence gap detected (%lu), possible network issues", gap);
+            } else if (gap > 5) {
+                ESP_LOGW(TAG, "Medium sequence gap detected (%lu), network may be congested", gap);
             }
         }
 

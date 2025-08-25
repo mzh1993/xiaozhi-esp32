@@ -133,7 +133,7 @@ void AudioService::Start() {
         AudioService* audio_service = (AudioService*)arg;
         audio_service->OpusCodecTask();
         vTaskDelete(NULL);
-    }, "opus_codec", 2048 * 13, this, 2, &opus_codec_task_handle_);
+    }, "opus_codec", 2048 * 13, this, 3, &opus_codec_task_handle_);  // 提高优先级到3
 }
 
 void AudioService::Stop() {

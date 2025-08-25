@@ -9,6 +9,7 @@
 #include "mcp_server.h"
 #include "lamp_controller.h"
 #include "fan_controller.h"
+#include "led188_display.h"
 #include "led/single_led.h"
 #include "assets/lang_config.h"
 
@@ -36,7 +37,7 @@ private:
     esp_lcd_panel_handle_t panel_ = nullptr;
     Display* display_ = nullptr;
     Button boot_button_;
-    Button touch_button_;           
+    Button fan_button_;           
     Button volume_up_button_;       
     Button volume_down_button_;     
 
@@ -44,6 +45,12 @@ private:
     TouchButtonWrapper head_touch_button_;
     TouchButtonWrapper hand_touch_button_;
     TouchButtonWrapper belly_touch_button_;
+    
+    // 风扇控制器
+    FanController* fan_controller_ = nullptr;
+    
+    // 188数码管显示
+    Led188Display* led188_display_ = nullptr;
 
     // 触摸按键文本候选列表
     std::vector<std::string> head_touch_texts_ = {
@@ -229,14 +236,26 @@ private:
             app.ToggleChatState();
         });
         
-        // 保留原来的实体按键事件处理
-        touch_button_.OnPressDown([this]() {
-            ESP_LOGI(TAG, "Touch button pressed down");
-            Application::GetInstance().StartListening();
+        // 风扇按键事件处理
+        fan_button_.OnPressDown([this]() {
+            ESP_LOGI(TAG, "Fan button pressed down");
+            if (fan_controller_) {
+                fan_controller_->HandleButtonPress();
+            }
         });
-        touch_button_.OnPressUp([this]() {
-            ESP_LOGI(TAG, "Touch button pressed up");
-            Application::GetInstance().StopListening();
+        
+        fan_button_.OnPressUp([this]() {
+            ESP_LOGI(TAG, "Fan button pressed up");
+            if (fan_controller_) {
+                fan_controller_->HandleButtonRelease();
+            }
+        });
+        
+        fan_button_.OnLongPress([this]() {
+            ESP_LOGI(TAG, "Fan button long pressed");
+            if (fan_controller_) {
+                fan_controller_->HandleButtonLongPress();
+            }
         });
 
         volume_up_button_.OnClick([this]() {
@@ -321,13 +340,27 @@ private:
     // 物联网初始化，逐步迁移到 MCP 协议
     void InitializeTools() {
         static LampController lamp(LAMP_GPIO);
-        static FanController fan(FAN_GPIO);  // 添加风扇控制器  
+        
+        // 初始化188数码管显示 (5线动态寻址)
+        led188_display_ = new Led188Display(LED188_PIN1_GPIO, LED188_PIN2_GPIO, LED188_PIN3_GPIO, 
+                                           LED188_PIN4_GPIO, LED188_PIN5_GPIO);
+        ESP_LOGI(TAG, "LED188 display initialized in board");
+        
+        // 初始化风扇控制器
+        fan_controller_ = new FanController(FAN_BUTTON_GPIO, FAN_GPIO, LEDC_CHANNEL_0);
+        ESP_LOGI(TAG, "Fan controller initialized in board");
+        
+        // 将188数码管显示关联到风扇控制器
+        if (fan_controller_ && led188_display_) {
+            fan_controller_->SetLed188Display(led188_display_);
+            ESP_LOGI(TAG, "LED188 display linked to fan controller");
+        }
     }
 
 public:
     CompactWifiBoard() :
         boot_button_(BOOT_BUTTON_GPIO),
-        touch_button_(TOUCH_BUTTON_GPIO),           // 保留原来的实体按键
+        fan_button_(FAN_BUTTON_GPIO),           
         volume_up_button_(VOLUME_UP_BUTTON_GPIO),   // 保留原来的实体按键
         volume_down_button_(VOLUME_DOWN_BUTTON_GPIO), // 保留原来的实体按键
         head_touch_button_(TOUCH_CHANNEL_HEAD, 0.10f),    // 新增玩具头部触摸，降低阈值提高灵敏度
@@ -359,6 +392,10 @@ public:
 
     virtual Display* GetDisplay() override {
         return display_;
+    }
+    
+    virtual FanController* GetFanController() override {
+        return fan_controller_;
     }
 };
 

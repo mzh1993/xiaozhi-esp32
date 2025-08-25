@@ -8,6 +8,7 @@
 #include "font_awesome_symbols.h"
 #include "assets/lang_config.h"
 #include "mcp_server.h"
+#include "boards/common/fan_controller.h"
 
 #include <cstring>
 #include <esp_log.h>
@@ -539,6 +540,9 @@ void Application::Start() {
     
     // Print heap stats
     SystemInfo::PrintHeapStats(); 
+    
+    // 风扇控制器已在board层级初始化
+    ESP_LOGI(TAG, "Fan controller initialized in board");
 }
 
 void Application::OnClockTimer() {
@@ -789,6 +793,24 @@ void Application::WakeWordInvoke(const std::string& wake_word) {
         });
     }
 }
+
+void Application::HandleVoiceCommand(const std::string& command) {
+    // 检查是否是风扇控制命令
+    if (command.find("风扇") != std::string::npos) {
+        ESP_LOGI(TAG, "Fan voice command detected: %s", command.c_str());
+        // 通过board获取风扇控制器实例
+        auto fan_controller = Board::GetInstance().GetFanController();
+        if (fan_controller) {
+            fan_controller->HandleVoiceCommand(command);
+        } else {
+            ESP_LOGW(TAG, "Fan controller not available");
+        }
+        return;
+    }
+    
+    // 其他语音命令处理逻辑
+    ESP_LOGI(TAG, "Processing voice command: %s", command.c_str());
+}
 /**
  * 触摸事件事件接口 - 只负责事件记录和调度
  * @param message 触摸事件消息
@@ -814,6 +836,14 @@ void Application::PostTouchEvent(const std::string& message) {
  */
 void Application::ProcessTouchEvent(const std::string& message) {
     ESP_LOGI(TAG, "Processing touch event: %s", message.c_str());
+    
+    // 检查是否是风扇控制事件
+    if (message.find("fan_button") != std::string::npos) {
+        ESP_LOGI(TAG, "Fan button event detected: %s", message.c_str());
+        // 风扇按键事件由FanController自动处理，这里只记录日志
+        // 如果需要，可以通过Board::GetInstance().GetFanController()获取风扇控制器
+        return;
+    }
     
     // 1. 检查当前设备状态，决定处理策略
     ESP_LOGI(TAG, "Current device state: %s", STATE_STRINGS[device_state_]);

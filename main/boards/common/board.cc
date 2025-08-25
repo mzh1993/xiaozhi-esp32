@@ -73,6 +73,10 @@ EarController* Board::GetEarController() {
     return ear_controller;
 }
 
+FanController* Board::GetFanController() {
+    return nullptr;  // 默认返回nullptr，表示不支持风扇控制
+}
+
 Led* Board::GetLed() {
     static NoLed led;
     return &led;

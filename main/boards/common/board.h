@@ -12,6 +12,7 @@
 #include "backlight.h"
 #include "camera.h"
 #include "ear/ear_controller.h"
+#include "fan_controller.h"
 
 void* create_board();
 class AudioCodec;
@@ -44,6 +45,7 @@ public:
     virtual Display* GetDisplay();
     virtual Camera* GetCamera();
     virtual EarController* GetEarController();
+    virtual FanController* GetFanController();
     virtual NetworkInterface* GetNetwork() = 0;
     virtual void StartNetwork() = 0;
     virtual const char* GetNetworkStateIcon() = 0;

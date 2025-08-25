@@ -55,6 +55,7 @@ public:
     void Reboot();
     void WakeWordInvoke(const std::string& wake_word);
     void PostTouchEvent(const std::string& message);
+    void HandleVoiceCommand(const std::string& command);
     bool CanEnterSleepMode();
     void SendMcpMessage(const std::string& payload);
     void SetAecMode(AecMode mode);

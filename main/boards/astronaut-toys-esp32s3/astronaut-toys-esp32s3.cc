@@ -81,6 +81,9 @@ private:
     // 耳朵控制器
     EarController* ear_controller_ = nullptr;
     
+    // 风扇控制器
+    FanController* fan_controller_ = nullptr;
+    
     // 触摸按钮到耳朵动作的映射方法
     void TriggerEarActionForTouch(const std::string& touch_type, bool is_long_press = false) {
         if (!ear_controller_) {
@@ -777,7 +780,11 @@ private:
 
     void InitializeTools() {
         static LampController lamp(LAMP_GPIO);
-        static FanController fan(FAN_GPIO);  // 添加风扇控制器  
+        
+        // 初始化风扇控制器
+        fan_controller_ = new FanController(FAN_BUTTON_GPIO, FAN_GPIO, LEDC_CHANNEL_0);
+        ESP_LOGI(TAG, "Fan controller initialized in board");
+        
         ESP_LOGI(TAG, "IoT devices initialized with MCP protocol");
     }
 
@@ -841,6 +848,11 @@ public:
     virtual EarController* GetEarController() override {
         ESP_LOGI(TAG, "GetEarController called, returning: %s", ear_controller_ ? "valid" : "null");
         return ear_controller_;
+    }
+
+    virtual FanController* GetFanController() override {
+        ESP_LOGI(TAG, "GetFanController called, returning: %s", fan_controller_ ? "valid" : "null");
+        return fan_controller_;
     }
 
     virtual bool GetBatteryLevel(int &level, bool &charging, bool &discharging) {

@@ -32,6 +32,7 @@
 #define TOUCH_CHANNEL_BELLY     (3) 
 
 #define LAMP_GPIO GPIO_NUM_18
+#define FAN_BUTTON_GPIO GPIO_NUM_46  // 风扇按键GPIO
 #define FAN_GPIO GPIO_NUM_21
 
 #define VBAT_ADC_CHANNEL         ADC_CHANNEL_9 

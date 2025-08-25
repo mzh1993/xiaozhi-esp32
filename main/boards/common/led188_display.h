@@ -10,8 +10,7 @@
 
 // 188数码管显示模式
 enum class Led188DisplayMode {
-    LEVEL = 0,      // 档位模式: 0/1/2/3
-    PERCENTAGE = 1  // 百分比模式: 0-100
+    PERCENTAGE = 0  // 百分比模式: 0-100
 };
 
 
@@ -25,7 +24,6 @@ private:
     uint8_t current_scan_pin_{0};  // 当前作为阳极的pin (0-4)
     
     // 显示状态
-    std::atomic<Led188DisplayMode> display_mode_{Led188DisplayMode::LEVEL};
     std::atomic<uint8_t> current_value_{0};
     std::atomic<bool> enabled_{true};
     
@@ -131,17 +129,14 @@ public:
     ~Led188Display();
     
     // 显示控制
-    void SetDisplayMode(Led188DisplayMode mode);
     void SetValue(uint8_t value);
     void TurnOff();
     void TurnOn();
     
     // 风扇档位显示专用方法
-    void DisplayFanLevel(uint8_t level);           // 显示档位 0/1/2/3
     void DisplayFanPercentage(uint8_t percentage); // 显示百分比 0-100
     
     // 状态查询
-    Led188DisplayMode GetDisplayMode() const { return display_mode_.load(); }
     uint8_t GetCurrentValue() const { return current_value_.load(); }
     bool IsEnabled() const { return enabled_.load(); }
 };

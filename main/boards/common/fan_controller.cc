@@ -576,28 +576,11 @@ void FanController::UpdateLed188Display() {
     }
     
     uint8_t current_percent = current_percentage_.load();
-    bool is_power_on = power_.load();
     
-    // 根据当前百分比显示档位
-    if (current_percent == 0) {
-        // 关闭状态 - 显示0
-        led188_display_->DisplayFanLevel(0);
-    } else if (current_percent == SPEED_LEVELS[1]) {
-        // 低档 (50%)
-        led188_display_->DisplayFanLevel(1);
-    } else if (current_percent == SPEED_LEVELS[2]) {
-        // 中档 (75%)
-        led188_display_->DisplayFanLevel(2);
-    } else if (current_percent == SPEED_LEVELS[3]) {
-        // 高档 (100%)
-        led188_display_->DisplayFanLevel(3);
-    } else {
-        // 自定义百分比，显示百分比数值
-        led188_display_->DisplayFanPercentage(current_percent);
-    }
+    // 统一显示百分比
+    led188_display_->DisplayFanPercentage(current_percent);
     
-    ESP_LOGI(TAG, "Updated LED188 display: percentage=%d%%, level=%d", 
-             current_percent, GetCurrentLevel());
+    ESP_LOGI(TAG, "Updated LED188 display: percentage=%d%%", current_percent);
 }
 
 void FanController::SetLed188Display(Led188Display* display) {

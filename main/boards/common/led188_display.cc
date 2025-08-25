@@ -10,14 +10,12 @@ static const char* TAG = "Led188Display";
 // 更新命令结构
 struct UpdateCommand {
     enum Type {
-        SET_MODE,
         SET_VALUE,
         TURN_OFF,
         TURN_ON
     } type;
     
     union {
-        Led188DisplayMode mode;
         uint8_t value;
     } data;
 };
@@ -85,6 +83,7 @@ Led188Display::Led188Display(gpio_num_t pin1, gpio_num_t pin2, gpio_num_t pin3, 
     TurnOff();
     
     ESP_LOGI(TAG, "LED188 display initialized successfully");
+    ESP_LOGI(TAG, "Display mode: PERCENTAGE only (0-100)");
     
     // 验证段码映射
     ValidateSegmentMapping();
@@ -247,42 +246,24 @@ void Led188Display::UpdateDisplayBuffer() {
         return;  // 显示被禁用
     }
     
-    // 根据显示模式更新缓冲区
-    switch (display_mode_.load()) {
-        case Led188DisplayMode::LEVEL: {
-            uint8_t level = current_value_.load();
-            if (level <= 3) {
-                if (level == 0) {
-                    // 显示 "0" - 关闭状态
-                    DisplayDigit(0, 2);
-                } else {
-                    // 显示数字 1-3 在DIG2位置
-                    DisplayDigit(level, 2);
-                }
-            }
-            break;
+    // 更新百分比显示
+    uint8_t percentage = current_value_.load();
+    if (percentage <= 100) {
+        if (percentage == 0) {
+            // 显示 "0"
+            DisplayDigit(0, 2);
+        } else if (percentage <= 99) {
+            // 显示两位数
+            uint8_t tens = percentage / 10;
+            uint8_t ones = percentage % 10;
+            
+            // 显示十位数在DIG2，个位数在DIG3
+            DisplayDigit(tens, 2);
+            DisplayDigit(ones, 3);
         }
-        case Led188DisplayMode::PERCENTAGE: {
-            uint8_t percentage = current_value_.load();
-            if (percentage <= 100) {
-                if (percentage == 0) {
-                    // 显示 "0"
-                    DisplayDigit(0, 2);
-                } else if (percentage <= 99) {
-                    // 显示两位数
-                    uint8_t tens = percentage / 10;
-                    uint8_t ones = percentage % 10;
-                    
-                    // 显示十位数在DIG2，个位数在DIG3
-                    DisplayDigit(tens, 2);
-                    DisplayDigit(ones, 3);
-                }
-                
-                // 显示百分比符号
-                SetSegment(SEG_L2, true);
-            }
-            break;
-        }
+        
+        // 显示百分比符号
+        SetSegment(SEG_L2, true);
     }
 }
 
@@ -342,17 +323,10 @@ void Led188Display::UpdateTask() {
     while (true) {
         if (xQueueReceive(update_queue_, &cmd, portMAX_DELAY) == pdTRUE) {
             switch (cmd.type) {
-                case UpdateCommand::SET_MODE:
-                    display_mode_.store(cmd.data.mode);
-                    ESP_LOGI(TAG, "Display mode changed to: %d", static_cast<int>(cmd.data.mode));
-                    break;
-                    
                 case UpdateCommand::SET_VALUE:
                     current_value_.store(cmd.data.value);
                     ESP_LOGI(TAG, "Display value set to: %d", cmd.data.value);
                     break;
-                    
-
                     
                 case UpdateCommand::TURN_OFF:
                     enabled_.store(false);
@@ -381,17 +355,6 @@ uint8_t Led188Display::NumberToSegment(uint8_t number) {
 
 
 // 公共接口实现
-void Led188Display::SetDisplayMode(Led188DisplayMode mode) {
-    UpdateCommand cmd = {
-        .type = UpdateCommand::SET_MODE,
-        .data = {.mode = mode}
-    };
-    
-    if (update_queue_) {
-        xQueueSend(update_queue_, &cmd, pdMS_TO_TICKS(100));
-    }
-}
-
 void Led188Display::SetValue(uint8_t value) {
     UpdateCommand cmd = {
         .type = UpdateCommand::SET_VALUE,
@@ -426,19 +389,8 @@ void Led188Display::TurnOn() {
 }
 
 // 风扇档位显示专用方法
-void Led188Display::DisplayFanLevel(uint8_t level) {
-    if (level <= 3) {
-        SetDisplayMode(Led188DisplayMode::LEVEL);
-        SetValue(level);
-        ESP_LOGI(TAG, "Displaying fan level: %d", level);
-    } else {
-        ESP_LOGW(TAG, "Invalid fan level: %d", level);
-    }
-}
-
 void Led188Display::DisplayFanPercentage(uint8_t percentage) {
     if (percentage <= 100) {
-        SetDisplayMode(Led188DisplayMode::PERCENTAGE);
         SetValue(percentage);
         ESP_LOGI(TAG, "Displaying fan percentage: %d%%", percentage);
     } else {

@@ -2,7 +2,7 @@
 #define __FAN_CONTROLLER_H__
 
 #include "mcp_server.h"
-#include "led188_display.h"
+// #include "led188_display.h"
 #include <driver/gpio.h>
 #include <driver/ledc.h>
 #include <esp_log.h>
@@ -46,6 +46,7 @@ private:
     std::atomic<bool> power_{false};
     std::atomic<uint8_t> current_percentage_{0};          // 当前百分比 (0-100)
     std::atomic<FanControlMode> control_mode_{FanControlMode::OFFLINE};
+    std::atomic<bool> initialized_{false};                // 初始化完成标志
     
     // 控制队列和任务
     QueueHandle_t command_queue_;
@@ -63,7 +64,7 @@ private:
     static constexpr uint8_t SPEED_LEVEL_COUNT = 4;
     
     // 188数码管显示
-    Led188Display* led188_display_;
+    // Led188Display* led188_display_;
     
     // 私有方法
     void InitializeHardware();
@@ -91,9 +92,9 @@ public:
     void SetMediumSpeed();                             // 设置为中档 (75%)
     void SetHighSpeed();                               // 设置为高档 (100%)
     
-    // 轻触按键控制（离线模式）
+    // 轻触按键控制（任何模式下都可以使用）
     void HandleButtonPress();
-    void HandleButtonRelease();
+    // void HandleButtonRelease();
     void HandleButtonLongPress();
     
     // 语音控制（在线模式）
@@ -116,8 +117,8 @@ public:
     void RecoverFromError();
     
     // 188数码管显示相关
-    void UpdateLed188Display();
-    void SetLed188Display(Led188Display* display);
+    // void UpdateLed188Display();
+    // void SetLed188Display(Led188Display* display);
 };
 
 #endif // __FAN_CONTROLLER_H__

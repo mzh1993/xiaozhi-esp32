@@ -207,7 +207,12 @@ bool MqttProtocol::OpenAudioChannel() {
             return;
         }
         if (sequence != remote_sequence_ + 1) {
-            ESP_LOGW(TAG, "Received audio packet with wrong sequence: %lu, expected: %lu", sequence, remote_sequence_ + 1);
+            ESP_LOGW(TAG, "Received audio packet with wrong sequence: %lu, expected: %lu (gap: %ld)", 
+                     sequence, remote_sequence_ + 1, sequence - remote_sequence_ - 1);
+            // 如果序列号跳跃太大，可能是网络问题，记录更详细的警告
+            if (sequence - remote_sequence_ > 10) {
+                ESP_LOGW(TAG, "Large sequence gap detected, possible network issues");
+            }
         }
 
         size_t decrypted_size = data.size() - aes_nonce_.size();

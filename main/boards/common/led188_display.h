@@ -64,6 +64,7 @@ private:
     void SetSegment(uint8_t segment_index, bool state);
     void DisplayDigit(uint8_t digit, uint8_t position);  // position: 1=DIG1, 2=DIG2, 3=DIG3
     void ValidateSegmentMapping();  // 验证段码映射正确性
+    uint8_t NumberToSegment(uint8_t number);  // 数字转段码
     
     // 段码映射表 (根据电路图) - 正确的5x5矩阵映射
     // 格式: {阳极索引, 阴极索引} (0-4对应外部控制线P1-P5)

@@ -434,6 +434,8 @@ bool AudioService::PushPacketToDecodeQueue(std::unique_ptr<AudioStreamPacket> pa
         if (wait) {
             audio_queue_cv_.wait(lock, [this]() { return audio_decode_queue_.size() < MAX_DECODE_PACKETS_IN_QUEUE; });
         } else {
+            ESP_LOGW(TAG, "Decode queue full (%zu/%d), dropping packet", 
+                     audio_decode_queue_.size(), MAX_DECODE_PACKETS_IN_QUEUE);
             return false;
         }
     }

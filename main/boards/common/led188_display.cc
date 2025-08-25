@@ -285,7 +285,7 @@ void Led188Display::ScanTask() {
         if (!enabled_.load()) {
             // 显示被禁用，关闭所有段
             SetAllPins(false);
-            vTaskDelay(pdMS_TO_TICKS(10));
+            vTaskDelay(pdMS_TO_TICKS(50));  // 增加延迟时间
             continue;
         }
         
@@ -310,8 +310,11 @@ void Led188Display::ScanTask() {
             }
             
             // 保持一段时间
-            vTaskDelay(pdMS_TO_TICKS(1));  // 1ms扫描时间
+            vTaskDelay(pdMS_TO_TICKS(2));  // 2ms扫描时间
         }
+        
+        // 完成一轮扫描后，给其他任务一些时间
+        vTaskDelay(pdMS_TO_TICKS(5));  // 5ms额外延迟
     }
 }
 

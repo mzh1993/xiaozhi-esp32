@@ -12,7 +12,7 @@
 static const char* TAG = "FanController";
 
 FanController::FanController(gpio_num_t button_gpio, gpio_num_t pwm_gpio, ledc_channel_t pwm_channel)
-    : button_gpio_(button_gpio), pwm_gpio_(pwm_gpio), pwm_channel_(pwm_channel), led188_display_(nullptr) {
+    : button_gpio_(button_gpio), pwm_gpio_(pwm_gpio), pwm_channel_(pwm_channel) {
     
     ESP_LOGI(TAG, "Initializing fan controller: Button GPIO%d, PWM GPIO%d, Channel%d", 
              button_gpio_, pwm_gpio_, pwm_channel_);
@@ -66,6 +66,12 @@ FanController::FanController(gpio_num_t button_gpio, gpio_num_t pwm_gpio, ledc_c
     // 初始化MCP工具
     InitializeMcpTools();
     
+    // 等待任务启动完成
+    vTaskDelay(pdMS_TO_TICKS(100));
+    
+    // 标记初始化完成
+    initialized_.store(true);
+    
     ESP_LOGI(TAG, "Fan controller initialized successfully");
 }
 
@@ -105,6 +111,9 @@ void FanController::InitializeHardware() {
     };
     ESP_ERROR_CHECK(gpio_config(&button_config));
     
+    // 先禁用中断，避免初始化过程中的误触发
+    gpio_intr_disable(button_gpio_);
+    
     // 安装GPIO中断服务
     ESP_ERROR_CHECK(gpio_install_isr_service(0));
     
@@ -114,12 +123,15 @@ void FanController::InitializeHardware() {
             static_cast<FanController*>(arg)->ButtonISR();
         }, this));
     
-    // 配置LEDC PWM硬件
+    // 初始化完成后启用中断
+    gpio_intr_enable(button_gpio_);
+    
+    // 配置LEDC PWM硬件 - 降低频率到500Hz，支持13位分辨率
     ledc_timer_config_t ledc_timer = {
         .speed_mode = LEDC_LOW_SPEED_MODE,        // 使用低速模式
         .duty_resolution = LEDC_TIMER_13_BIT,     // 13位分辨率 (0-8191)
         .timer_num = LEDC_TIMER_0,                // 使用定时器0
-        .freq_hz = 25000,                         // 25kHz PWM频率
+        .freq_hz = 500,                           // 500Hz PWM频率 (降低频率，确保稳定)
         .clk_cfg = LEDC_AUTO_CLK,                 // 自动选择时钟源
     };
     ESP_ERROR_CHECK(ledc_timer_config(&ledc_timer));
@@ -136,56 +148,77 @@ void FanController::InitializeHardware() {
     };
     ESP_ERROR_CHECK(ledc_channel_config(&ledc_channel));
     
-    ESP_LOGI(TAG, "Hardware initialized: Button GPIO%d, PWM GPIO%d, Channel%d, 25kHz@13bit", 
+    ESP_LOGI(TAG, "Hardware initialized: Button GPIO%d, PWM GPIO%d, Channel%d, 500Hz@13bit", 
              button_gpio_, pwm_gpio_, pwm_channel_);
 }
 
-void IRAM_ATTR FanController::ButtonISR() {
-    uint32_t gpio_num = gpio_get_level(button_gpio_);
+void FanController::ButtonISR() {
+    uint32_t gpio_level = gpio_get_level(button_gpio_);
     uint64_t current_time = esp_timer_get_time();
     
-    if (gpio_num == 0) {  // 按键按下（低电平）
-        button_pressed_.store(true);
-        button_press_time_.store(current_time);
+    if (gpio_level == 0) {  // 按键按下（低电平）
+        if (!button_pressed_.load()) {  // 避免重复记录按下时间
+            button_pressed_.store(true);
+            button_press_time_.store(current_time);
+            ESP_LOGD(TAG, "Button pressed at %llu", current_time);
+        }
     } else {  // 按键释放（高电平）
-        button_pressed_.store(false);
-        button_release_time_.store(current_time);
+        if (button_pressed_.load()) {  // 避免重复记录释放时间
+            button_pressed_.store(false);
+            button_release_time_.store(current_time);
+            ESP_LOGD(TAG, "Button released at %llu", current_time);
+        }
     }
 }
 
 void FanController::ButtonTask() {
     const TickType_t xDelay = pdMS_TO_TICKS(10);  // 10ms检测间隔
     const uint64_t LONG_PRESS_TIME = 2000000;     // 2秒长按时间
-    const uint64_t DEBOUNCE_TIME = 50000;         // 50ms防抖时间
+    const uint64_t DEBOUNCE_TIME = 100000;        // 100ms防抖时间（增加防抖时间）
+    const uint64_t MIN_PRESS_TIME = 50000;        // 50ms最小按压时间
     
     ESP_LOGI(TAG, "Button task started");
     
+    uint64_t last_press_time = 0;  // 记录上次有效按键时间
+    
     while (true) {
+        uint64_t current_time = esp_timer_get_time();
+        
         if (button_pressed_.load()) {
-            uint64_t press_duration = esp_timer_get_time() - button_press_time_.load();
+            uint64_t press_duration = current_time - button_press_time_.load();
             
             // 检测长按
             if (press_duration > LONG_PRESS_TIME) {
+                ESP_LOGI(TAG, "Long press detected, duration: %llu ms", press_duration / 1000);
                 HandleButtonLongPress();
                 // 等待按键释放
                 while (button_pressed_.load()) {
                     vTaskDelay(pdMS_TO_TICKS(50));
                 }
+                // 重置时间
+                button_press_time_.store(0);
+                button_release_time_.store(0);
+                last_press_time = current_time;
             }
         } else {
-            // 检测短按
+            // 检测短按 - 只在按键释放时处理
             uint64_t release_time = button_release_time_.load();
             uint64_t press_time = button_press_time_.load();
             
             if (release_time > press_time && 
+                press_time > last_press_time &&  // 确保是新的按键事件
                 (release_time - press_time) < LONG_PRESS_TIME &&
-                (release_time - press_time) > DEBOUNCE_TIME) {
+                (release_time - press_time) > MIN_PRESS_TIME &&
+                (release_time - press_time) < DEBOUNCE_TIME) {
                 
+                ESP_LOGI(TAG, "Short press detected, duration: %llu ms", (release_time - press_time) / 1000);
                 HandleButtonPress();
-                // 重置时间，避免重复触发
-                button_press_time_.store(0);
-                button_release_time_.store(0);
+                last_press_time = current_time;
             }
+            
+            // 重置时间，避免重复触发
+            button_press_time_.store(0);
+            button_release_time_.store(0);
         }
         
         vTaskDelay(xDelay);
@@ -205,6 +238,12 @@ void FanController::ControlTask() {
 }
 
 void FanController::ProcessCommand(const FanControlRequest& request) {
+    // 检查初始化状态
+    if (!initialized_.load()) {
+        ESP_LOGW(TAG, "Fan controller not initialized yet, ignoring command");
+        return;
+    }
+    
     std::lock_guard<std::mutex> lock(control_mutex_);
     
     ESP_LOGI(TAG, "Processing command: %d, percentage: %d, from_voice: %s", 
@@ -243,7 +282,7 @@ void FanController::SetPercentage(uint8_t percentage) {
     UpdatePWM(percentage);
     
     // 更新188数码管显示
-    UpdateLed188Display();
+    // UpdateLed188Display();
     
     ESP_LOGI(TAG, "Fan set to %d%%", percentage);
 }
@@ -314,10 +353,9 @@ std::string FanController::GetCurrentLevelName() const {
 }
 
 void FanController::HandleButtonPress() {
-    if (control_mode_ != FanControlMode::OFFLINE) {
-        ESP_LOGW(TAG, "Button press ignored - not in offline mode");
-        return;
-    }
+    // 按键在任何模式下都可以使用
+    ESP_LOGI(TAG, "Button press handled in mode: %s", 
+              control_mode_.load() == FanControlMode::OFFLINE ? "OFFLINE" : "ONLINE");
     
     FanControlRequest request = {
         .command = FanCommand::NEXT_LEVEL,
@@ -330,16 +368,15 @@ void FanController::HandleButtonPress() {
     }
 }
 
-void FanController::HandleButtonRelease() {
-    // 按键释放事件，目前不需要特殊处理
-    ESP_LOGD(TAG, "Button released");
-}
+// void FanController::HandleButtonRelease() {
+//     // 按键释放事件，目前不需要特殊处理
+//     ESP_LOGD(TAG, "Button released");
+// }
 
 void FanController::HandleButtonLongPress() {
-    if (control_mode_ != FanControlMode::OFFLINE) {
-        ESP_LOGW(TAG, "Button long press ignored - not in offline mode");
-        return;
-    }
+    // 长按在任何模式下都可以使用
+    ESP_LOGI(TAG, "Button long press handled in mode: %s", 
+              control_mode_.load() == FanControlMode::OFFLINE ? "OFFLINE" : "ONLINE");
     
     FanControlRequest request = {
         .command = FanCommand::EMERGENCY_STOP,
@@ -363,8 +400,10 @@ void FanController::HandleVoiceCommand(const std::string& command) {
     
     // 解析语音命令 - 统一为百分比控制
     if (command.find("关闭") != std::string::npos || command.find("关") != std::string::npos) {
-        request.command = FanCommand::TURN_OFF;
+        // 关闭风扇时先设置风速为0%，然后关闭
+        request.command = FanCommand::SET_PERCENTAGE;
         request.percentage = 0;
+        ESP_LOGI(TAG, "Voice command: closing fan by setting speed to 0%%");
     } else if (command.find("低风") != std::string::npos || command.find("小风") != std::string::npos) {
         request.command = FanCommand::SET_PERCENTAGE;
         request.percentage = SPEED_LEVELS[1];  // 50%
@@ -431,6 +470,10 @@ void FanController::InitializeMcpTools() {
                       "Get the current state and speed of the fan", 
                       PropertyList(), 
                       [this](const PropertyList& properties) -> ReturnValue {
+                          if (!initialized_.load()) {
+                              return "{\"error\": \"fan controller not initialized\", \"power\": false, \"level\": \"off\", \"percentage\": 0, \"mode\": \"offline\"}";
+                          }
+                          
                           std::string state = power_.load() ? "on" : "off";
                           std::string level_name = GetCurrentLevelName();
                           uint8_t current_percent = current_percentage_.load();
@@ -460,6 +503,10 @@ void FanController::InitializeMcpTools() {
                           Property("percentage", kPropertyTypeInteger, 50, 0, 100)
                       }), 
                       [this](const PropertyList& properties) -> ReturnValue {
+                          if (!initialized_.load()) {
+                              ESP_LOGW(TAG, "Fan controller not initialized, cannot set percentage");
+                              return false;
+                          }
                           int percentage = properties["percentage"].value<int>();
                           SetPercentage(static_cast<uint8_t>(percentage));
                           return true;
@@ -570,25 +617,25 @@ void FanController::RecoverFromError() {
     ESP_LOGI(TAG, "Fan controller recovered from error successfully");
 }
 
-void FanController::UpdateLed188Display() {
-    if (!led188_display_) {
-        return;
-    }
-    
-    uint8_t current_percent = current_percentage_.load();
-    
-    // 统一显示百分比
-    led188_display_->DisplayFanPercentage(current_percent);
-    
-    ESP_LOGI(TAG, "Updated LED188 display: percentage=%d%%", current_percent);
-}
+// void FanController::UpdateLed188Display() {
+//     if (!led188_display_) {
+//         return;
+//     }
+//     
+//     uint8_t current_percent = current_percentage_.load();
+//     
+//     // 统一显示百分比
+//     led188_display_->DisplayFanPercentage(current_percent);
+//     
+//     ESP_LOGI(TAG, "Updated LED188 display: percentage=%d%%", current_percent);
+// }
 
-void FanController::SetLed188Display(Led188Display* display) {
-    led188_display_ = display;
-    ESP_LOGI(TAG, "LED188 display set: %s", display ? "valid" : "null");
-    
-    // 立即更新显示
-    if (display) {
-        UpdateLed188Display();
-    }
-}
+// void FanController::SetLed188Display(Led188Display* display) {
+//     led188_display_ = display;
+//     ESP_LOGI(TAG, "LED188 display set: %s", display ? "valid" : "null");
+//     
+//     // 立即更新显示
+//     if (display) {
+//         UpdateLed188Display();
+//     }
+// }

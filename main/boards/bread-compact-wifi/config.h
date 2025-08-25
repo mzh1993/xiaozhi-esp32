@@ -30,9 +30,9 @@
 
 #define BUILTIN_LED_GPIO        GPIO_NUM_48
 #define BOOT_BUTTON_GPIO        GPIO_NUM_0
-#define FAN_BUTTON_GPIO       GPIO_NUM_47
+#define FAN_BUTTON_GPIO         GPIO_NUM_47
 #define VOLUME_UP_BUTTON_GPIO   GPIO_NUM_40
-#define VOLUME_DOWN_BUTTON_GPIO GPIO_NUM_39
+#define VOLUME_DOWN_BUTTON_GPIO GPIO_NUM_45
 
 // 触摸按钮通道定义 - 新增玩具触摸按键
 #define TOUCH_CHANNEL_HEAD      (3)   // 玩具头部触摸
@@ -66,11 +66,11 @@
 
 // 188数码管5线动态寻址GPIO定义
 // 5根控制线，既是阳极也是阴极，通过动态扫描实现矩阵寻址
-#define LED188_PIN1_GPIO  GPIO_NUM_38   // 控制线1
-#define LED188_PIN2_GPIO  GPIO_NUM_37   // 控制线2
-#define LED188_PIN3_GPIO  GPIO_NUM_36   // 控制线3
-#define LED188_PIN4_GPIO  GPIO_NUM_35   // 控制线4
-#define LED188_PIN5_GPIO  GPIO_NUM_34   // 控制线5
+#define LED188_PIN1_GPIO  GPIO_NUM_39   // 控制线1
+#define LED188_PIN2_GPIO  GPIO_NUM_38   // 控制线2
+#define LED188_PIN3_GPIO  GPIO_NUM_37   // 控制线3
+#define LED188_PIN4_GPIO  GPIO_NUM_36   // 控制线4
+#define LED188_PIN5_GPIO  GPIO_NUM_35   // 控制线5
 
 // 注意：需要5V驱动，ESP32S3的3.3V可能不够
 // 建议使用电平转换器或外部5V电源

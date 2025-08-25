@@ -9,7 +9,7 @@
 #include "mcp_server.h"
 #include "lamp_controller.h"
 #include "fan_controller.h"
-#include "led188_display.h"
+// #include "led188_display.h"
 #include "led/single_led.h"
 #include "assets/lang_config.h"
 
@@ -50,7 +50,7 @@ private:
     FanController* fan_controller_ = nullptr;
     
     // 188数码管显示
-    Led188Display* led188_display_ = nullptr;
+    // Led188Display* led188_display_ = nullptr;
 
     // 触摸按键文本候选列表
     std::vector<std::string> head_touch_texts_ = {
@@ -236,18 +236,11 @@ private:
             app.ToggleChatState();
         });
         
-        // 风扇按键事件处理
-        fan_button_.OnPressDown([this]() {
-            ESP_LOGI(TAG, "Fan button pressed down");
+        // 风扇按键事件处理 - 只处理单击和长按，避免重复触发
+        fan_button_.OnClick([this]() {
+            ESP_LOGI(TAG, "Fan button clicked");
             if (fan_controller_) {
                 fan_controller_->HandleButtonPress();
-            }
-        });
-        
-        fan_button_.OnPressUp([this]() {
-            ESP_LOGI(TAG, "Fan button pressed up");
-            if (fan_controller_) {
-                fan_controller_->HandleButtonRelease();
             }
         });
         
@@ -341,20 +334,20 @@ private:
     void InitializeTools() {
         static LampController lamp(LAMP_GPIO);
         
-        // 初始化188数码管显示 (5线动态寻址)
-        led188_display_ = new Led188Display(LED188_PIN1_GPIO, LED188_PIN2_GPIO, LED188_PIN3_GPIO, 
-                                           LED188_PIN4_GPIO, LED188_PIN5_GPIO);
-        ESP_LOGI(TAG, "LED188 display initialized in board");
+        // 初始化188数码管显示 (5线动态寻址) - 暂时屏蔽
+        // led188_display_ = new Led188Display(LED188_PIN1_GPIO, LED188_PIN2_GPIO, LED188_PIN3_GPIO, 
+        //                                    LED188_PIN4_GPIO, LED188_PIN5_GPIO);
+        // ESP_LOGI(TAG, "LED188 display initialized in board");
         
         // 初始化风扇控制器
         fan_controller_ = new FanController(FAN_BUTTON_GPIO, FAN_GPIO, LEDC_CHANNEL_0);
         ESP_LOGI(TAG, "Fan controller initialized in board");
         
-        // 将188数码管显示关联到风扇控制器
-        if (fan_controller_ && led188_display_) {
-            fan_controller_->SetLed188Display(led188_display_);
-            ESP_LOGI(TAG, "LED188 display linked to fan controller");
-        }
+        // 将188数码管显示关联到风扇控制器 - 暂时屏蔽
+        // if (fan_controller_ && led188_display_) {
+        //     fan_controller_->SetLed188Display(led188_display_);
+        //     ESP_LOGI(TAG, "LED188 display linked to fan controller");
+        // }
     }
 
 public:

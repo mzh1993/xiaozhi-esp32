@@ -6,25 +6,9 @@
 
 // ===== 电机延时参数配置 - 基于实际测试优化 =====
 // 耳朵位置控制延时参数（单位：毫秒）
-#define EAR_POSITION_DOWN_TIME_MS      100     // 耳朵下垂所需时间
-#define EAR_POSITION_UP_TIME_MS        100     // 耳朵竖起所需时间
-#define EAR_POSITION_MIDDLE_TIME_MS    40      // 耳朵到中间位置所需时间
-
-// 情绪动作延时系数（相对于基础延时）- 基于实际电机性能调整
-#define EMOTION_QUICK_RATIO            0.8     // 快速动作：80%的基础时间
-#define EMOTION_NORMAL_RATIO           1.0     // 正常动作：100%的基础时间
-#define EMOTION_SLOW_RATIO             1.5     // 慢速动作：150%的基础时间
-#define EMOTION_FULL_RATIO             2.0     // 完整动作：200%的基础时间
-
-// 情绪动作间延时系数 - 增加停顿时间使动作更自然
-#define EMOTION_GAP_QUICK_RATIO        1.5     // 快速间隔：150%的基础时间
-#define EMOTION_GAP_NORMAL_RATIO       2.0     // 正常间隔：200%的基础时间
-#define EMOTION_GAP_SLOW_RATIO         2.5     // 慢速间隔：250%的基础时间
-#define EMOTION_GAP_FULL_RATIO         3.0     // 完整间隔：300%的基础时间
-
-// 延时计算宏
-#define EMOTION_TIME(base_time, ratio)     ((uint32_t)((base_time) * (ratio)))
-#define EMOTION_GAP(base_time, ratio)      ((uint32_t)((base_time) * (ratio)))
+#define EAR_POSITION_DOWN_TIME_MS      100     // 耳朵从竖起到下垂所需时间
+#define EAR_POSITION_UP_TIME_MS        100     // 耳朵从下垂到竖起所需时间
+#define EAR_POSITION_MIDDLE_TIME_MS    40      // 耳朵从竖起最高点回到中间位置所需时间
 
 // 场景动作延时参数
 #define SCENARIO_DEFAULT_DELAY_MS      200     // 场景步骤间默认延时（增加）
@@ -79,6 +63,12 @@ public:
     virtual void TestEarPositions() override;
     virtual void TestEarCombinations() override;
     virtual void TestEarSequences() override;
+    
+    // 调试和紧急情况方法
+    void ForceResetAllStates();
+    
+    // 系统初始化方法
+    void SetEarInitialPosition();
 
 private:
     // GPIO引脚配置
@@ -92,6 +82,9 @@ private:
     uint64_t last_emotion_time_;
     bool emotion_action_active_;
     
+    // 停止定时器 - 用于非阻塞的MoveBoth
+    TimerHandle_t stop_timer_;
+    
     // 耳朵位置状态跟踪 - 已从基类继承，无需重复声明
 
     // 私有方法
@@ -100,8 +93,9 @@ private:
     bool ShouldTriggerEmotion(const char* emotion);
     void UpdateEmotionState(const char* emotion);
     void SetEarFinalPosition();
+    void OnStopTimer(TimerHandle_t timer);
 
-    // 默认情绪序列定义 - 使用新的序列结构
+    // 默认情绪序列定义 - 基于时间控制的情绪表达
     static const ear_sequence_step_t happy_sequence_[];
     static const ear_sequence_step_t curious_sequence_[];
     static const ear_sequence_step_t excited_sequence_[];
@@ -109,6 +103,11 @@ private:
     static const ear_sequence_step_t sad_sequence_[];
     static const ear_sequence_step_t surprised_sequence_[];
     static const ear_sequence_step_t sleepy_sequence_[];
+    static const ear_sequence_step_t confident_sequence_[];
+    static const ear_sequence_step_t confused_sequence_[];
+    static const ear_sequence_step_t loving_sequence_[];
+    static const ear_sequence_step_t angry_sequence_[];
+    static const ear_sequence_step_t cool_sequence_[];
 
     // 默认情绪映射
     static const std::map<std::string, std::vector<ear_sequence_step_t>> default_emotion_mappings_;

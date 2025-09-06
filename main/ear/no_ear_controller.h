@@ -45,6 +45,9 @@ public:
     virtual void TestEarPositions() override;
     virtual void TestEarCombinations() override;
     virtual void TestEarSequences() override;
+    
+    // 重写位置控制接口
+    virtual void SetEarInitialPosition() override;
 
 private:
     // 私有方法

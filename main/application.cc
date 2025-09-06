@@ -446,29 +446,15 @@ void Application::Start() {
             auto emotion = cJSON_GetObjectItem(root, "emotion");
             if (cJSON_IsString(emotion)) {
                 Schedule([this, display, emotion_str = std::string(emotion->valuestring)]() {
-                    // 检查情绪是否发生变化
-                    static std::string last_emotion = "";
-                    if (last_emotion != emotion_str) {
-                        ESP_LOGI(TAG, "Emotion changed from '%s' to '%s'", last_emotion.c_str(), emotion_str.c_str());
-                        last_emotion = emotion_str;
-                        // 更新显示
-                        display->SetEmotion(emotion_str.c_str());
-                        // 触发对应的耳朵动作
-                        auto ear_controller = Board::GetInstance().GetEarController();
-                        if (ear_controller) {
-                            ESP_LOGI(TAG, "Triggering ear emotion: %s", emotion_str.c_str());
-                            ear_controller->TriggerEmotion(emotion_str.c_str());
-                        } else {
-                            ESP_LOGW(TAG, "No ear controller available for emotion: %s", emotion_str.c_str());
-                        }
-                    } else {
-                        ESP_LOGI(TAG, "Emotion unchanged: %s, skipping ear action", emotion_str.c_str());
-                        // 只更新显示，不触发耳朵动作
-                        display->SetEmotion(emotion_str.c_str());
+                    // 更新显示
+                    display->SetEmotion(emotion_str.c_str());
+                    
+                    // 触发耳朵动作（让耳朵控制器自己处理重复检查）
+                    auto ear_controller = Board::GetInstance().GetEarController();
+                    if (ear_controller) {
+                        ear_controller->TriggerEmotion(emotion_str.c_str());
                     }
                 });
-            } else {
-                ESP_LOGW(TAG, "LLM message missing or invalid emotion field");
             }
         } else if (strcmp(type->valuestring, "mcp") == 0) {
             auto payload = cJSON_GetObjectItem(root, "payload");
@@ -700,7 +686,7 @@ void Application::SetDeviceState(DeviceState state) {
             // 空闲状态时确保耳朵下垂
             if (ear_controller) {
                 ESP_LOGI(TAG, "Device entering idle state, ensuring ears are down");
-                ear_controller->ResetToDefault();
+                ear_controller->SetEarInitialPosition();
             }
             break;
         case kDeviceStateConnecting:

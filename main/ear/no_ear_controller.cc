@@ -141,6 +141,10 @@ void NoEarController::TestEarSequences() {
     LogOperation("TestEarSequences", "No hardware - test ignored");
 }
 
+void NoEarController::SetEarInitialPosition() {
+    LogOperation("SetEarInitialPosition", "No hardware - operation ignored");
+}
+
 // ===== 私有方法 =====
 
 void NoEarController::LogOperation(const char* operation, const char* details) {

@@ -105,6 +105,7 @@ public:
     virtual esp_err_t SetEarPosition(bool left_ear, ear_position_t position) = 0;
     virtual ear_position_t GetEarPosition(bool left_ear) = 0;
     virtual esp_err_t ResetToDefault() = 0;
+    virtual void SetEarInitialPosition() = 0;
     
     // 4. 场景控制（复杂功能）
     virtual esp_err_t PlaySequence(const ear_sequence_step_t* steps, uint8_t count, bool loop = false) = 0;

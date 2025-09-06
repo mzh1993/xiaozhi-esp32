@@ -312,3 +312,10 @@ esp_err_t EarController::DeinitializeBase() {
     ESP_LOGI(TAG, "Base ear controller deinitialized");
     return ESP_OK;
 }
+
+// 默认实现：设置耳朵到下垂位置
+void EarController::SetEarInitialPosition() {
+    ESP_LOGI(TAG, "SetEarInitialPosition: Default implementation - setting ears to DOWN position");
+    SetEarPosition(true, EAR_POSITION_DOWN);
+    SetEarPosition(false, EAR_POSITION_DOWN);
+}

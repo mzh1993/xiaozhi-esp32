@@ -84,120 +84,21 @@ private:
     // 风扇控制器
     FanController* fan_controller_ = nullptr;
     
-    // 触摸按钮到耳朵动作的映射方法
+    
+    // 简化的触摸动作映射
     void TriggerEarActionForTouch(const std::string& touch_type, bool is_long_press = false) {
         if (!ear_controller_) {
             ESP_LOGW(TAG, "No ear controller available for touch action");
             return;
         }
         
-        ESP_LOGI(TAG, "Triggering ear action for touch: %s, long_press: %s", 
-                 touch_type.c_str(), is_long_press ? "true" : "false");
-        
-        // 根据触摸类型和是否长按选择不同的耳朵动作
+        // 简单的映射逻辑
         if (touch_type == "head") {
-            if (is_long_press) {
-                // 长时间摸头 - 温和的开心动作
-                ear_controller_->TriggerEmotion("happy");
-            } else {
-                // 摸头 - 好奇动作
-                ear_controller_->TriggerEmotion("curious");
-            }
+            ear_controller_->TriggerEmotion(is_long_press ? "happy" : "curious");
         } else if (touch_type == "nose") {
-            if (is_long_press) {
-                // 长时间摸鼻子 - 兴奋动作
-                ear_controller_->TriggerEmotion("excited");
-            } else {
-                // 摸鼻子 - 玩耍动作
-                ear_controller_->TriggerEmotion("playful");
-            }
+            ear_controller_->TriggerEmotion(is_long_press ? "excited" : "playful");
         } else if (touch_type == "belly") {
-            if (is_long_press) {
-                // 长时间摸肚子 - 温和开心动作
-                ear_controller_->TriggerEmotion("happy");
-            } else {
-                // 摸肚子 - 开心动作
-                ear_controller_->TriggerEmotion("playful");
-            }
-        }
-    }
-    
-    // 触摸频率跟踪和智能动作映射
-    struct TouchHistory {
-        std::string touch_type;
-        int64_t timestamp;
-        bool is_long_press;
-    };
-    
-    std::vector<TouchHistory> touch_history_;
-    static const int MAX_TOUCH_HISTORY = 10;
-    static const int64_t TOUCH_FREQUENCY_WINDOW_MS = 3000; // 3秒窗口
-    
-    void TriggerSmartEarActionForTouch(const std::string& touch_type, bool is_long_press = false) {
-        if (!ear_controller_) {
-            ESP_LOGW(TAG, "No ear controller available for smart touch action");
-            return;
-        }
-        
-        int64_t current_time = esp_timer_get_time() / 1000; // 转换为毫秒
-        
-        // 记录触摸历史
-        TouchHistory new_touch = {touch_type, current_time, is_long_press};
-        touch_history_.push_back(new_touch);
-        
-        // 保持历史记录在合理范围内
-        if (touch_history_.size() > MAX_TOUCH_HISTORY) {
-            touch_history_.erase(touch_history_.begin());
-        }
-        
-        // 分析触摸模式
-        int recent_touches = 0;
-        int head_touches = 0;
-        int nose_touches = 0;
-        int belly_touches = 0;
-        
-        for (const auto& touch : touch_history_) {
-            if (current_time - touch.timestamp < TOUCH_FREQUENCY_WINDOW_MS) {
-                recent_touches++;
-                if (touch.touch_type == "head") head_touches++;
-                else if (touch.touch_type == "nose") nose_touches++;
-                else if (touch.touch_type == "belly") belly_touches++;
-            }
-        }
-        
-        ESP_LOGI(TAG, "Touch analysis: recent=%d, head=%d, nose=%d, belly=%d", 
-                 recent_touches, head_touches, nose_touches, belly_touches);
-        
-        // 根据触摸模式选择耳朵动作
-        if (recent_touches >= 5) {
-            // 高频触摸 - 兴奋动作
-            ESP_LOGI(TAG, "High frequency touch detected, triggering excited action");
-            ear_controller_->TriggerEmotion("excited");
-        } else if (recent_touches >= 3) {
-            // 中频触摸 - 玩耍动作
-            ESP_LOGI(TAG, "Medium frequency touch detected, triggering playful action");
-            ear_controller_->TriggerEmotion("playful");
-        } else {
-            // 低频触摸 - 根据具体位置选择动作
-            if (touch_type == "head") {
-                if (is_long_press) {
-                    ear_controller_->TriggerEmotion("happy");
-                } else {
-                    ear_controller_->TriggerEmotion("curious");
-                }
-            } else if (touch_type == "nose") {
-                if (is_long_press) {
-                    ear_controller_->TriggerEmotion("excited");
-                } else {
-                    ear_controller_->TriggerEmotion("playful");
-                }
-            } else if (touch_type == "belly") {
-                if (is_long_press) {
-                    ear_controller_->TriggerEmotion("happy");
-                } else {
-                    ear_controller_->TriggerEmotion("playful");
-                }
-            }
+            ear_controller_->TriggerEmotion(is_long_press ? "happy" : "playful");
         }
     }
     
@@ -424,8 +325,18 @@ private:
 
     // 屏蔽触摸传感器初始化 - 调试模式下不需要
     void InitializeTouchSensor() {
-        ESP_LOGI(TAG, "Touch sensor initialization SKIPPED in debug mode");
-        // 触摸传感器初始化代码已屏蔽，用于ear控制器参数调试
+        // 初始化触摸传感器 - 传入所有需要的通道
+        uint32_t touch_channels[] = {TOUCH_CHANNEL_HEAD, TOUCH_CHANNEL_NOSE, TOUCH_CHANNEL_BELLY};
+        int channel_count = sizeof(touch_channels) / sizeof(touch_channels[0]);
+        TouchButtonWrapper::InitializeTouchSensor(touch_channels, channel_count);
+        TouchButtonWrapper::StartTouchSensor();
+        
+        // 触摸传感器初始化完成后，创建所有按钮
+        head_touch_button_.CreateButton();
+        nose_touch_button_.CreateButton();
+        belly_touch_button_.CreateButton();
+        
+        ESP_LOGI(TAG, "Touch sensor initialized for toy touch buttons");
     }
 
     void InitializeEarController() {
@@ -511,15 +422,11 @@ private:
         vTaskDelay(pdMS_TO_TICKS(1000)); // 延迟1秒
         
         if (ear_controller_) {
-            ESP_LOGI(TAG, "Ensuring ears are in default DOWN position after GPIO initialization");
+            ESP_LOGI(TAG, "Setting ears to initial DOWN position for system startup");
             
-            // 首先尝试复位到默认位置
-            esp_err_t reset_ret = ear_controller_->ResetToDefault();
-            if (reset_ret == ESP_OK) {
-                ESP_LOGI(TAG, "Ears successfully reset to default DOWN position");
-            } else {
-                ESP_LOGW(TAG, "Failed to reset ears to default position");
-            }
+            // 使用专门的初始化方法设置下垂位置
+            ear_controller_->SetEarInitialPosition();
+            ESP_LOGI(TAG, "Ears successfully set to initial DOWN position");
         } else {
             ESP_LOGW(TAG, "No ear controller available for delayed reset");
         }
@@ -583,7 +490,7 @@ private:
                 display_->ShowNotification(action_text);
             }
             // 触发耳朵动作
-            TriggerSmartEarActionForTouch("head", false);
+            TriggerEarActionForTouch("head", false);
             // 使用新的事件接口，发送带有动作描述的文本
             Application::GetInstance().PostTouchEvent(action_text);
         });
@@ -597,7 +504,7 @@ private:
                 display_->ShowNotification(action_text);
             }
             // 触发耳朵动作
-            TriggerSmartEarActionForTouch("head", true);
+            TriggerEarActionForTouch("head", true);
             // 使用新的事件接口
             Application::GetInstance().PostTouchEvent(action_text);
         });
@@ -611,7 +518,7 @@ private:
                 display_->ShowNotification(action_text);
             }
             // 触发耳朵动作
-            TriggerSmartEarActionForTouch("nose", false);
+            TriggerEarActionForTouch("nose", false);
             // 使用新的事件接口，发送带有动作描述的文本
             Application::GetInstance().PostTouchEvent(action_text);
         });
@@ -625,7 +532,7 @@ private:
                 display_->ShowNotification(action_text);
             }
             // 触发耳朵动作
-            TriggerSmartEarActionForTouch("nose", true);
+            TriggerEarActionForTouch("nose", true);
             // 使用新的事件接口
             Application::GetInstance().PostTouchEvent(action_text);
         });
@@ -639,7 +546,7 @@ private:
                 display_->ShowNotification(action_text);
             }
             // 触发耳朵动作
-            TriggerSmartEarActionForTouch("belly", false);
+            TriggerEarActionForTouch("belly", false);
             // 使用新的事件接口，发送带有动作描述的文本
             Application::GetInstance().PostTouchEvent(action_text);
         });
@@ -653,7 +560,7 @@ private:
                 display_->ShowNotification(action_text);
             }
             // 触发耳朵动作
-            TriggerSmartEarActionForTouch("belly", true);
+            TriggerEarActionForTouch("belly", true);
             // 使用新的事件接口
             Application::GetInstance().PostTouchEvent(action_text);
         });

@@ -123,6 +123,24 @@ bool NoEarController::IsSequenceActive() {
     return false; // 没有硬件，永远不会执行序列
 }
 
+// ===== 测试接口 - 空实现 =====
+
+void NoEarController::TestBasicEarFunctions() {
+    LogOperation("TestBasicEarFunctions", "No hardware - test ignored");
+}
+
+void NoEarController::TestEarPositions() {
+    LogOperation("TestEarPositions", "No hardware - test ignored");
+}
+
+void NoEarController::TestEarCombinations() {
+    LogOperation("TestEarCombinations", "No hardware - test ignored");
+}
+
+void NoEarController::TestEarSequences() {
+    LogOperation("TestEarSequences", "No hardware - test ignored");
+}
+
 // ===== 私有方法 =====
 
 void NoEarController::LogOperation(const char* operation, const char* details) {

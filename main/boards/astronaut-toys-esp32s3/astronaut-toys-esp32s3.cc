@@ -201,86 +201,6 @@ private:
         }
     }
     
-    // // 触摸按键文本候选列表
-    // std::vector<std::string> head_touch_texts_ = {
-    //     "哈哈，摸摸你的头哦~",
-    //     "哇，摸摸你的头，好舒服的头~",
-    //     "我来摸摸你的小脑袋啦",
-    //     "我在摸你头，头好痒痒的吧",
-    //     "来给我摸摸头，摸摸头",
-    //     "哇，摸摸你的头，你的头发软软的",
-    //     "我要摸摸你的头发",
-    //     "哇，摸摸你的头，头好温暖",
-    //     "摸摸你的小脑瓜，小脑瓜好可爱",
-    //     "摸摸你的头，头好舒服"
-    // };
-    
-    // std::vector<std::string> nose_touch_texts_ = {
-    //     "我来摸摸你的鼻子~",
-    //     "我在摸摸你的鼻子，鼻子好痒痒~",
-    //     "摸摸你的鼻子，好舒服",
-    //     "摸摸你的小鼻子",
-    //     "哇，你的鼻子好软软的",
-    //     "我要摸摸你的鼻子，好舒服",
-    //     "我在摸你的长长鼻子，它会喷水吗",
-    //     "摸摸你的长鼻头",
-    //     "你的鼻子好温暖",
-    //     "摸摸你的鼻子，真开心",
-    //     "鼻子好可爱，会喝水吗",
-    //     "你的鼻子真可爱，会喝水吗",
-    // };
-    
-    // std::vector<std::string> belly_touch_texts_ = {
-    //     "我在摸摸你的肚子~",
-    //     "我在摸摸你的肚子，肚子好痒痒",
-    //     "摸摸你的小肚子，会跳舞吗",
-    //     "在你肚子上跳舞，肚子好软软的",
-    //     "摸摸你的小肚子，肚皮好痒痒",
-    //     "摸摸你的小肚皮，肚皮好痒痒",
-    //     "摸一下你的圆圆肚子好温暖",
-    //     "摸摸肚子，真开心",
-    //     "哇你的肚子好舒服，让我摸摸~"
-    // };
-    
-    // std::vector<std::string> head_long_press_texts_ = {
-    //     "长时间摸你的头~",
-    //     "我在摸你的头摸了好久",
-    //     "你的头被我摸得好舒服",
-    //     "长时间摸摸头，继续摸摸~",
-    //     "你的头被我摸得痒痒的",
-    //     "摸头摸得停不下来，继续摸摸~",
-    //     "你的头被我摸得好温暖",
-    //     "长时间摸摸小脑袋，继续摸摸~",
-    //     "你的头真可爱，被我摸了好久，好开心",
-    //     "摸头摸得好久，继续摸摸~"
-    // };
-    
-    // std::vector<std::string> nose_long_press_texts_ = {
-    //     "我一直摸你的鼻子，你觉得好痒痒吗？要不要我再摸一会儿？",
-    //     "我的手停留在你的鼻子上好久，你是不是很开心，想和我一起玩？",
-    //     "我这样摸你的鼻子，你都快要打喷嚏啦，要不要和我一起做个鬼脸？",
-    //     "你的鼻子被我摸得暖暖的，你觉得很舒服吗？你是不是也很喜欢我？",
-    //     "我一直摸你的鼻子，你有点害羞了吗？要不要你也摸摸我？",
-    //     "我的手好温暖，摸在你的鼻子上，我想和你多待一会儿！",
-    //     "我摸你的鼻子这么久，是不是想和你说悄悄话呀？",
-    //     "你的鼻子被我摸得软软的，我想和你一起做个游戏，好不好？",
-    //     "我摸你的小鼻子这么久，你都快要笑出来啦，要不要一起笑一笑？",
-    //     "谢谢你让我一直摸你的鼻子，我觉得我们是最好的朋友！"
-    // };
-    
-    // std::vector<std::string> belly_long_press_texts_ = {
-    //     "我一直摸你的肚子，你觉得好痒痒吗？要不要和我一起笑？",
-    //     "我的手在你肚子上停留了好久，你觉得很温暖吗？好想和你抱一抱！",
-    //     "你的肚子被我摸得软软的，我想和你一起跳舞，你愿意吗？",
-    //     "我摸你的肚子这么久，你都快要咕咕叫啦，要不要我喂你点好吃的？",
-    //     "我的手摸在你的肚皮上，你觉得很舒服吗？我们一起玩游戏吧！",
-    //     "我一直摸你的肚子，你有点害羞了吗？要不要你也摸摸我？",
-    //     "你的肚子被我摸得暖暖的，我想和你一起做个梦，好不好？",
-    //     "我摸你的小肚子这么久，你都快要笑出声啦，要不要一起打个滚？",
-    //     "谢谢你让我一直摸你的肚子，我觉得我们是最亲密的朋友！",
-    //     "我的手好温柔，摸在你的肚子上，我想和你一直在一起！"
-    // };
-
     std::vector<std::string> head_touch_texts_ = {
         "用户轻轻摸了摸我的小脑袋，我感觉很舒服，想和用户互动",
         "用户温柔地抚摸我的头部，让我感到被关爱，想表达感谢",
@@ -502,26 +422,10 @@ private:
 #endif // ADC_CALI_SCHEME_CURVE_FITTING_SUPPORTED
     }
 
+    // 屏蔽触摸传感器初始化 - 调试模式下不需要
     void InitializeTouchSensor() {
-        ESP_LOGI(TAG, "Starting touch sensor initialization...");
-        
-        // 初始化触摸传感器 - 传入所有需要的通道
-        uint32_t touch_channels[] = {TOUCH_CHANNEL_HEAD, TOUCH_CHANNEL_NOSE, TOUCH_CHANNEL_BELLY};
-        int channel_count = sizeof(touch_channels) / sizeof(touch_channels[0]);
-        
-        ESP_LOGI(TAG, "Touch channels: HEAD=%d, NOSE=%d, BELLY=%d", 
-                 TOUCH_CHANNEL_HEAD, TOUCH_CHANNEL_NOSE, TOUCH_CHANNEL_BELLY);
-        
-        TouchButtonWrapper::InitializeTouchSensor(touch_channels, channel_count);
-        TouchButtonWrapper::StartTouchSensor();
-        
-        // 触摸传感器初始化完成后，创建所有按钮
-        ESP_LOGI(TAG, "Creating touch buttons...");
-        head_touch_button_.CreateButton();
-        nose_touch_button_.CreateButton();
-        belly_touch_button_.CreateButton();
-        
-        ESP_LOGI(TAG, "Touch sensor initialization completed successfully");
+        ESP_LOGI(TAG, "Touch sensor initialization SKIPPED in debug mode");
+        // 触摸传感器初始化代码已屏蔽，用于ear控制器参数调试
     }
 
     void InitializeEarController() {
@@ -754,38 +658,88 @@ private:
             Application::GetInstance().PostTouchEvent(action_text);
         });
 
-        // // KEY1 按钮
-        // key1_button_.OnClick([]() {
-        //     auto& app = Application::GetInstance();
-        //     app.ToggleChatState();  // 切换聊天状态
+        // // KEY2 按钮 - 重新配置为ear控制器基础功能循环测试
+        // key2_button_.OnClick([this]() {
+        //     ESP_LOGI(TAG, "=== KEY2 Clicked - Testing ear controller basic functions ===");
+        //     if (!ear_controller_) {
+        //         ESP_LOGW(TAG, "No ear controller available for testing");
+        //         return;
+        //     }
+            
+        //     // 检查是否有测试正在进行
+        //     if (ear_controller_->IsSequenceActive()) {
+        //         ESP_LOGW(TAG, "Test already in progress, please wait or long press to stop");
+        //         return;
+        //     }
+            
+        //     // 循环测试不同的基础功能
+        //     static int test_function = 0;
+        //     const char* function_names[] = {"Basic Functions", "Positions", "Combinations", "Sequences"};
+            
+        //     ESP_LOGI(TAG, "Testing ear function %d: %s", test_function + 1, function_names[test_function]);
+            
+        //     // 直接在当前任务中执行，避免异步复杂性
+        //     switch (test_function) {
+        //         case 0:
+        //             ear_controller_->TestBasicEarFunctions();
+        //             break;
+        //         case 1:
+        //             ear_controller_->TestEarPositions();
+        //             break;
+        //         case 2:
+        //             ear_controller_->TestEarCombinations();
+        //             break;
+        //         case 3:
+        //             ear_controller_->TestEarSequences();
+        //             break;
+        //     }
+            
+        //     // 循环到下一个测试功能
+        //     test_function = (test_function + 1) % 4;
+        //     ESP_LOGI(TAG, "Next test function will be: %s", function_names[test_function]);
         // });
-        // key1_button_.OnLongPress([]() {
-        //     auto& app = Application::GetInstance();
-        //     // 长按处理，比如进入配置模式
-        //     ESP_LOGI(TAG, "KEY1 Long Pressed - Placeholder action");
-        // });
-
-        // // KEY2 按钮
-        // key1_button_.OnClick([]() {
-        //     auto& app = Application::GetInstance();
-        //     // 处理 KEY2 点击事件
-        //     ESP_LOGI(TAG, "KEY2 Clicked - Placeholder action");
-        // });
-        // key1_button_.OnDoubleClick([]() {
-        //     auto& app = Application::GetInstance();
-        //     // 处理 KEY2 双击事件
-        //     ESP_LOGI(TAG, "KEY2 Double Clicked - Placeholder action");
+        
+        // // 双击功能已移除，单击现在循环测试所有基础功能
+        // key2_button_.OnLongPress([this]() {
+        //     ESP_LOGI(TAG, "=== KEY2 Long Pressed - Stopping tests and resetting ears ===");
+        //     if (!ear_controller_) {
+        //         ESP_LOGW(TAG, "No ear controller available for reset");
+        //         return;
+        //     }
+            
+        //     // 停止所有正在进行的测试和序列
+        //     ESP_LOGI(TAG, "Stopping all ear activities");
+        //     ear_controller_->StopEmotion();
+        //     ear_controller_->StopSequence();
+        //     ear_controller_->StopBoth();
+            
+        //     // 等待一下确保停止完成
+        //     vTaskDelay(pdMS_TO_TICKS(1000)); // 增加等待时间
+            
+        //     // 重置耳朵到默认位置
+        //     ESP_LOGI(TAG, "Resetting ears to default DOWN position");
+        //     esp_err_t ret = ear_controller_->ResetToDefault();
+        //     if (ret == ESP_OK) {
+        //         ESP_LOGI(TAG, "Ears reset to default position successfully");
+        //     } else {
+        //         ESP_LOGW(TAG, "Failed to reset ears to default position");
+        //     }
+            
+        //     // 再次等待确保重置完成
+        //     vTaskDelay(pdMS_TO_TICKS(500));
+            
+        //     ESP_LOGI(TAG, "=== All tests stopped and ears reset ===");
         // });
     }
 
     void InitializeTools() {
         static LampController lamp(LAMP_GPIO);
         
-        // 初始化风扇控制器
-        fan_controller_ = new FanController(FAN_BUTTON_GPIO, FAN_GPIO, LEDC_CHANNEL_0);
-        ESP_LOGI(TAG, "Fan controller initialized in board");
+        // 屏蔽风扇控制器初始化 - 调试模式下不需要
+        // fan_controller_ = new FanController(FAN_BUTTON_GPIO, FAN_GPIO, LEDC_CHANNEL_0);
+        // ESP_LOGI(TAG, "Fan controller initialization SKIPPED in debug mode");
         
-        ESP_LOGI(TAG, "IoT devices initialized with MCP protocol");
+        ESP_LOGI(TAG, "IoT devices initialized with MCP protocol (limited)");
     }
 
 public:
@@ -802,16 +756,27 @@ public:
         InitializeADC();
         InitializeCodecI2c();
         InitializeSsd1306Display();
-        InitializeTouchSensor();  // 先初始化触摸传感器
-        InitializeButtons();      // 再初始化按钮事件
+        InitializeTouchSensor();  // 触摸传感器初始化（已屏蔽）
+        InitializeButtons();      // 按钮事件初始化
         InitializePowerSaveTimer();
         InitializeEarController(); // 初始化耳朵控制器
         // InitializeMemoryMonitor();  // 初始化内存监控
         InitializeTools();
         
         // 延迟执行耳朵复位，确保GPIO初始化完成
-        ESP_LOGI(TAG, "Scheduling delayed ear reset");
+        // ESP_LOGI(TAG, "Scheduling delayed ear reset for debug mode");
         DelayedEarReset();
+        
+        // // 调试模式说明
+        // ESP_LOGI(TAG, "=== EAR CONTROLLER DEBUG MODE ENABLED ===");
+        // ESP_LOGI(TAG, "KEY2 Click: Cycle through ear function tests");
+        // ESP_LOGI(TAG, "  - Basic Functions (单耳控制)");
+        // ESP_LOGI(TAG, "  - Positions (位置控制)");
+        // ESP_LOGI(TAG, "  - Combinations (组合动作)");
+        // ESP_LOGI(TAG, "  - Sequences (情绪序列)");
+        // ESP_LOGI(TAG, "KEY2 Long Press: Stop all tests and reset ears");
+        // ESP_LOGI(TAG, "Touch sensors and fan controller are DISABLED in debug mode");
+        // ESP_LOGI(TAG, "================================================");
     }
 
     ~AstronautToysESP32S3() {
@@ -851,8 +816,8 @@ public:
     }
 
     virtual FanController* GetFanController() override {
-        ESP_LOGI(TAG, "GetFanController called, returning: %s", fan_controller_ ? "valid" : "null");
-        return fan_controller_;
+        ESP_LOGW(TAG, "GetFanController called but fan controller is disabled in debug mode");
+        return nullptr; // 调试模式下风扇控制器被禁用
     }
 
     virtual bool GetBatteryLevel(int &level, bool &charging, bool &discharging) {

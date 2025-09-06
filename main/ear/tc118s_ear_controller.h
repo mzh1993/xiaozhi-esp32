@@ -4,31 +4,31 @@
 #include "ear_controller.h"
 #include "driver/gpio.h"
 
-// ===== 电机延时参数配置 - 可根据实际电机调整 =====
+// ===== 电机延时参数配置 - 基于实际测试优化 =====
 // 耳朵位置控制延时参数（单位：毫秒）
-#define EAR_POSITION_DOWN_TIME_MS      800     // 耳朵下垂所需时间
-#define EAR_POSITION_UP_TIME_MS        800     // 耳朵竖起所需时间
-#define EAR_POSITION_MIDDLE_TIME_MS    400     // 耳朵到中间位置所需时间
+#define EAR_POSITION_DOWN_TIME_MS      100     // 耳朵下垂所需时间
+#define EAR_POSITION_UP_TIME_MS        100     // 耳朵竖起所需时间
+#define EAR_POSITION_MIDDLE_TIME_MS    40      // 耳朵到中间位置所需时间
 
-// 情绪动作延时系数（相对于基础延时）
-#define EMOTION_QUICK_RATIO            0.3     // 快速动作：30%的基础时间
-#define EMOTION_NORMAL_RATIO           0.6     // 正常动作：60%的基础时间
-#define EMOTION_SLOW_RATIO             0.8     // 慢速动作：80%的基础时间
-#define EMOTION_FULL_RATIO             1.0     // 完整动作：100%的基础时间
+// 情绪动作延时系数（相对于基础延时）- 基于实际电机性能调整
+#define EMOTION_QUICK_RATIO            0.8     // 快速动作：80%的基础时间
+#define EMOTION_NORMAL_RATIO           1.0     // 正常动作：100%的基础时间
+#define EMOTION_SLOW_RATIO             1.5     // 慢速动作：150%的基础时间
+#define EMOTION_FULL_RATIO             2.0     // 完整动作：200%的基础时间
 
-// 情绪动作间延时系数
-#define EMOTION_GAP_QUICK_RATIO        0.2     // 快速间隔：20%的基础时间
-#define EMOTION_GAP_NORMAL_RATIO       0.4     // 正常间隔：40%的基础时间
-#define EMOTION_GAP_SLOW_RATIO         0.6     // 慢速间隔：60%的基础时间
-#define EMOTION_GAP_FULL_RATIO         1.0     // 完整间隔：100%的基础时间
+// 情绪动作间延时系数 - 增加停顿时间使动作更自然
+#define EMOTION_GAP_QUICK_RATIO        1.5     // 快速间隔：150%的基础时间
+#define EMOTION_GAP_NORMAL_RATIO       2.0     // 正常间隔：200%的基础时间
+#define EMOTION_GAP_SLOW_RATIO         2.5     // 慢速间隔：250%的基础时间
+#define EMOTION_GAP_FULL_RATIO         3.0     // 完整间隔：300%的基础时间
 
 // 延时计算宏
 #define EMOTION_TIME(base_time, ratio)     ((uint32_t)((base_time) * (ratio)))
 #define EMOTION_GAP(base_time, ratio)      ((uint32_t)((base_time) * (ratio)))
 
 // 场景动作延时参数
-#define SCENARIO_DEFAULT_DELAY_MS      150     // 场景步骤间默认延时
-#define SCENARIO_LOOP_DELAY_MS         300     // 场景循环间延时
+#define SCENARIO_DEFAULT_DELAY_MS      200     // 场景步骤间默认延时（增加）
+#define SCENARIO_LOOP_DELAY_MS         500     // 场景循环间延时（增加）
 #define EMOTION_COOLDOWN_MS            3000    // 情绪触发冷却时间
 
 // ===== 宏定义结束 =====
@@ -73,6 +73,12 @@ public:
     
     // 重写定时器回调方法
     virtual void OnSequenceTimer(TimerHandle_t timer) override;
+    
+    // 新增：基础功能测试方法
+    virtual void TestBasicEarFunctions() override;
+    virtual void TestEarPositions() override;
+    virtual void TestEarCombinations() override;
+    virtual void TestEarSequences() override;
 
 private:
     // GPIO引脚配置

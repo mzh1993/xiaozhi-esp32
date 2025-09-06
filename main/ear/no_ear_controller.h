@@ -39,6 +39,12 @@ public:
     virtual ear_action_t GetCurrentAction(bool left_ear) override;
     virtual bool IsMoving(bool left_ear) override;
     virtual bool IsSequenceActive() override;
+    
+    // 重写测试接口 - 空实现
+    virtual void TestBasicEarFunctions() override;
+    virtual void TestEarPositions() override;
+    virtual void TestEarCombinations() override;
+    virtual void TestEarSequences() override;
 
 private:
     // 私有方法

@@ -120,6 +120,12 @@ public:
     virtual bool IsMoving(bool left_ear) = 0;
     virtual bool IsSequenceActive() = 0;
     
+    // ===== 测试接口 - 用于调试和功能验证 =====
+    virtual void TestBasicEarFunctions() = 0;
+    virtual void TestEarPositions() = 0;
+    virtual void TestEarCombinations() = 0;
+    virtual void TestEarSequences() = 0;
+    
     // ===== 初始化和反初始化接口 =====
     virtual esp_err_t Initialize() = 0;
     virtual esp_err_t Deinitialize() = 0;

@@ -85,21 +85,102 @@ private:
     FanController* fan_controller_ = nullptr;
     
     
-    // 简化的触摸动作映射
+    // 情绪+文本绑定结构
+    struct TouchResponse {
+        std::string emotion;
+        std::string text;
+    };
+    
+    // 触摸响应映射 - 根据玩偶性格设计
+    std::map<std::string, std::vector<TouchResponse>> touch_responses_ = {
+        // 鼻子触摸 - 玩偶喜欢被摸鼻子，触发积极情绪
+        {"nose_click", {
+            {"happy", "用户轻轻点了点我的小鼻子，让我感到很开心，想和用户一起玩耍"},
+            {"excited", "用户摸了我的鼻子，让我感到兴奋，想和用户一起探索"},
+            {"playful", "用户轻触我的鼻子，让我感到有趣，想和用户一起做游戏"}
+        }},
+        {"nose_long", {
+            {"excited", "用户一直摸我的鼻子，让我感到非常兴奋和快乐，想和用户一起创造更多快乐"},
+            {"happy", "用户持续摸我的鼻子，让我感到被宠爱，想和用户建立更深的情感连接"},
+            {"playful", "用户长时间摸我的鼻子，让我感到无比开心，想和用户一起度过美好时光"}
+        }},
+        
+        // 肚子触摸 - 玩偶不喜欢被摸肚子，触发消极情绪
+        {"belly_click", {
+            {"angry", "用户摸了我的肚子，让我感到不舒服，请不要这样做"},
+            {"sad", "用户摸了我的肚子，让我感到难过，我不喜欢被摸这里"},
+            {"confused", "用户摸了我的肚子，让我感到困惑，为什么总是摸这里呢？"}
+        }},
+        {"belly_long", {
+            {"angry", "用户一直摸我的肚子，让我感到非常愤怒，请立即停止！"},
+            {"sad", "用户持续摸我的肚子，让我感到非常难过，我需要一些空间"},
+            {"confused", "用户长时间摸我的肚子，让我感到困惑和不安，我不理解为什么要这样做"}
+        }},
+        
+        // 头部触摸 - 中性反应，触发温和情绪
+        {"head_click", {
+            {"surprised", "用户轻轻摸了摸我的小脑袋，让我感到有点惊讶，但感觉还不错"},
+            {"curious", "用户摸了我的头，让我感到好奇，想了解用户的意图"},
+            {"loving", "用户轻抚我的脑袋，让我感到被关爱，想和用户亲近"},
+            {"confident", "用户摸我的头，让我感到自信，想和用户分享这份温暖"}
+        }},
+        {"head_long", {
+            {"loving", "用户长时间抚摸我的小脑袋，让我感到被深深关爱，想和用户建立深厚友谊"},
+            {"confident", "用户持续摸我的头，让我感到被信任，想和用户一起创造美好回忆"},
+            {"surprised", "用户长时间轻抚我的头部，让我感到惊讶于这份温柔，想和用户分享内心的温暖"},
+            {"curious", "用户持续摸我的头，让我感到好奇和温暖，想和用户一起度过美好时光"}
+        }}
+    };
+    
+    // 新的触摸动作映射 - 基于情绪+文本绑定
     void TriggerEarActionForTouch(const std::string& touch_type, bool is_long_press = false) {
         if (!ear_controller_) {
             ESP_LOGW(TAG, "No ear controller available for touch action");
             return;
         }
         
-        // 简单的映射逻辑
-        if (touch_type == "head") {
-            ear_controller_->TriggerEmotion(is_long_press ? "happy" : "curious");
-        } else if (touch_type == "nose") {
-            ear_controller_->TriggerEmotion(is_long_press ? "excited" : "playful");
-        } else if (touch_type == "belly") {
-            ear_controller_->TriggerEmotion(is_long_press ? "happy" : "playful");
+        // 构建映射键
+        std::string map_key = touch_type + (is_long_press ? "_long" : "_click");
+        
+        // 查找对应的响应列表
+        auto it = touch_responses_.find(map_key);
+        if (it == touch_responses_.end()) {
+            ESP_LOGW(TAG, "No response mapping found for %s", map_key.c_str());
+            return;
         }
+        
+        const auto& responses = it->second;
+        if (responses.empty()) {
+            ESP_LOGW(TAG, "Empty response list for %s", map_key.c_str());
+            return;
+        }
+        
+        // 随机选择一个响应
+        static std::random_device rd;
+        static std::mt19937 gen(rd());
+        std::uniform_int_distribution<> dis(0, responses.size() - 1);
+        const TouchResponse& selected_response = responses[dis(gen)];
+        
+        // 触发对应的情绪
+        ear_controller_->TriggerEmotion(selected_response.emotion.c_str());
+        
+        ESP_LOGI(TAG, "Touch %s triggered emotion: %s", map_key.c_str(), selected_response.emotion.c_str());
+    }
+    
+    // 获取触摸响应的文本
+    std::string GetTouchResponseText(const std::string& touch_type, bool is_long_press = false) {
+        std::string map_key = touch_type + (is_long_press ? "_long" : "_click");
+        
+        auto it = touch_responses_.find(map_key);
+        if (it == touch_responses_.end() || it->second.empty()) {
+            return "摸摸你哦~";
+        }
+        
+        // 随机选择一个响应
+        static std::random_device rd;
+        static std::mt19937 gen(rd());
+        std::uniform_int_distribution<> dis(0, it->second.size() - 1);
+        return it->second[dis(gen)].text;
     }
     
     std::vector<std::string> head_touch_texts_ = {
@@ -480,16 +561,16 @@ private:
             }
         });
 
-        // 新增玩具触摸按键事件处理 - 使用新的事件接口
+        // 新增玩具触摸按键事件处理 - 使用新的情绪+文本绑定系统
         head_touch_button_.OnClick([this]() {
             ESP_LOGI(TAG, "Head touch button clicked - Channel: %d", TOUCH_CHANNEL_HEAD);
-            std::string touch_text = GetRandomText(head_touch_texts_);
+            std::string touch_text = GetTouchResponseText("head", false);
             std::string action_text = "抚摸头部：" + touch_text;
             
             if (display_) {
                 display_->ShowNotification(action_text);
             }
-            // 触发耳朵动作
+            // 触发耳朵动作和情绪
             TriggerEarActionForTouch("head", false);
             // 使用新的事件接口，发送带有动作描述的文本
             Application::GetInstance().PostTouchEvent(action_text);
@@ -497,13 +578,13 @@ private:
         
         head_touch_button_.OnLongPress([this]() {
             ESP_LOGI(TAG, "Head touch button long pressed - Channel: %d", TOUCH_CHANNEL_HEAD);
-            std::string touch_text = GetRandomText(head_long_press_texts_);
+            std::string touch_text = GetTouchResponseText("head", true);
             std::string action_text = "长时间抚摸头部：" + touch_text;
             
             if (display_) {
                 display_->ShowNotification(action_text);
             }
-            // 触发耳朵动作
+            // 触发耳朵动作和情绪
             TriggerEarActionForTouch("head", true);
             // 使用新的事件接口
             Application::GetInstance().PostTouchEvent(action_text);
@@ -511,13 +592,13 @@ private:
         
         nose_touch_button_.OnClick([this]() {
             ESP_LOGI(TAG, "Nose touch button clicked - Channel: %d", TOUCH_CHANNEL_NOSE);
-            std::string touch_text = GetRandomText(nose_touch_texts_);
+            std::string touch_text = GetTouchResponseText("nose", false);
             std::string action_text = "抚摸鼻子：" + touch_text;
             
             if (display_) {
                 display_->ShowNotification(action_text);
             }
-            // 触发耳朵动作
+            // 触发耳朵动作和情绪
             TriggerEarActionForTouch("nose", false);
             // 使用新的事件接口，发送带有动作描述的文本
             Application::GetInstance().PostTouchEvent(action_text);
@@ -525,13 +606,13 @@ private:
         
         nose_touch_button_.OnLongPress([this]() {
             ESP_LOGI(TAG, "Nose touch button long pressed - Channel: %d", TOUCH_CHANNEL_NOSE);
-            std::string touch_text = GetRandomText(nose_long_press_texts_);
+            std::string touch_text = GetTouchResponseText("nose", true);
             std::string action_text = "长时间抚摸鼻子：" + touch_text;
             
             if (display_) {
                 display_->ShowNotification(action_text);
             }
-            // 触发耳朵动作
+            // 触发耳朵动作和情绪
             TriggerEarActionForTouch("nose", true);
             // 使用新的事件接口
             Application::GetInstance().PostTouchEvent(action_text);
@@ -539,13 +620,13 @@ private:
         
         belly_touch_button_.OnClick([this]() {
             ESP_LOGI(TAG, "Belly touch button clicked - Channel: %d", TOUCH_CHANNEL_BELLY);
-            std::string touch_text = GetRandomText(belly_touch_texts_);
+            std::string touch_text = GetTouchResponseText("belly", false);
             std::string action_text = "抚摸肚子：" + touch_text;
             
             if (display_) {
                 display_->ShowNotification(action_text);
             }
-            // 触发耳朵动作
+            // 触发耳朵动作和情绪
             TriggerEarActionForTouch("belly", false);
             // 使用新的事件接口，发送带有动作描述的文本
             Application::GetInstance().PostTouchEvent(action_text);
@@ -553,90 +634,45 @@ private:
         
         belly_touch_button_.OnLongPress([this]() {
             ESP_LOGI(TAG, "Belly touch button long pressed - Channel: %d", TOUCH_CHANNEL_BELLY);
-            std::string touch_text = GetRandomText(belly_long_press_texts_);
+            std::string touch_text = GetTouchResponseText("belly", true);
             std::string action_text = "长时间抚摸肚子：" + touch_text;
             
             if (display_) {
                 display_->ShowNotification(action_text);
             }
-            // 触发耳朵动作
+            // 触发耳朵动作和情绪
             TriggerEarActionForTouch("belly", true);
             // 使用新的事件接口
             Application::GetInstance().PostTouchEvent(action_text);
         });
 
-        // // KEY2 按钮 - 重新配置为ear控制器基础功能循环测试
-        // key2_button_.OnClick([this]() {
-        //     ESP_LOGI(TAG, "=== KEY2 Clicked - Testing ear controller basic functions ===");
-        //     if (!ear_controller_) {
-        //         ESP_LOGW(TAG, "No ear controller available for testing");
-        //         return;
-        //     }
-            
-        //     // 检查是否有测试正在进行
-        //     if (ear_controller_->IsSequenceActive()) {
-        //         ESP_LOGW(TAG, "Test already in progress, please wait or long press to stop");
-        //         return;
-        //     }
-            
-        //     // 循环测试不同的基础功能
-        //     static int test_function = 0;
-        //     const char* function_names[] = {"Basic Functions", "Positions", "Combinations", "Sequences"};
-            
-        //     ESP_LOGI(TAG, "Testing ear function %d: %s", test_function + 1, function_names[test_function]);
-            
-        //     // 直接在当前任务中执行，避免异步复杂性
-        //     switch (test_function) {
-        //         case 0:
-        //             ear_controller_->TestBasicEarFunctions();
-        //             break;
-        //         case 1:
-        //             ear_controller_->TestEarPositions();
-        //             break;
-        //         case 2:
-        //             ear_controller_->TestEarCombinations();
-        //             break;
-        //         case 3:
-        //             ear_controller_->TestEarSequences();
-        //             break;
-        //     }
-            
-        //     // 循环到下一个测试功能
-        //     test_function = (test_function + 1) % 4;
-        //     ESP_LOGI(TAG, "Next test function will be: %s", function_names[test_function]);
-        // });
-        
-        // // 双击功能已移除，单击现在循环测试所有基础功能
-        // key2_button_.OnLongPress([this]() {
-        //     ESP_LOGI(TAG, "=== KEY2 Long Pressed - Stopping tests and resetting ears ===");
-        //     if (!ear_controller_) {
-        //         ESP_LOGW(TAG, "No ear controller available for reset");
-        //         return;
-        //     }
-            
-        //     // 停止所有正在进行的测试和序列
-        //     ESP_LOGI(TAG, "Stopping all ear activities");
-        //     ear_controller_->StopEmotion();
-        //     ear_controller_->StopSequence();
-        //     ear_controller_->StopBoth();
-            
-        //     // 等待一下确保停止完成
-        //     vTaskDelay(pdMS_TO_TICKS(1000)); // 增加等待时间
-            
-        //     // 重置耳朵到默认位置
-        //     ESP_LOGI(TAG, "Resetting ears to default DOWN position");
-        //     esp_err_t ret = ear_controller_->ResetToDefault();
-        //     if (ret == ESP_OK) {
-        //         ESP_LOGI(TAG, "Ears reset to default position successfully");
-        //     } else {
-        //         ESP_LOGW(TAG, "Failed to reset ears to default position");
-        //     }
-            
-        //     // 再次等待确保重置完成
-        //     vTaskDelay(pdMS_TO_TICKS(500));
-            
-        //     ESP_LOGI(TAG, "=== All tests stopped and ears reset ===");
-        // });
+        // KEY2 按钮 - 改为音量控制：单击-10，双击+10
+        key2_button_.OnClick([this]() {
+            // ESP_LOGI(TAG, "KEY2 单击，音量减10");
+            auto codec = GetAudioCodec();
+            int vol = codec->output_volume() - 10;
+            if (vol < 0) vol = 0;
+            codec->SetOutputVolume(vol);
+            if (display_) {
+                display_->ShowNotification("音量：" + std::to_string(vol));
+            }
+        });
+
+        key2_button_.OnDoubleClick([this]() {
+            // ESP_LOGI(TAG, "KEY2 双击，音量加10");
+            auto codec = GetAudioCodec();
+            int vol = codec->output_volume() + 10;
+            if (vol > 100) vol = 100;
+            codec->SetOutputVolume(vol);
+            if (display_) {
+                display_->ShowNotification("音量：" + std::to_string(vol));
+            }
+        });
+
+        // 长按功能可留空或用于其他用途
+        key2_button_.OnLongPress([this]() {
+            ESP_LOGI(TAG, "KEY2 长按，无操作");
+        });
     }
 
     void InitializeTools() {
@@ -656,9 +692,9 @@ public:
     volume_down_button_(VOLUME_DOWN_BUTTON_GPIO),
     key1_button_(KEY1_BUTTON_GPIO),
     key2_button_(KEY2_BUTTON_GPIO),
-    head_touch_button_(TOUCH_CHANNEL_HEAD, 0.15f),    // 触摸按钮对象创建
-    nose_touch_button_(TOUCH_CHANNEL_NOSE, 0.15f),    // 触摸按钮对象创建
-    belly_touch_button_(TOUCH_CHANNEL_BELLY, 0.15f) { // 触摸按钮对象创建
+    head_touch_button_(TOUCH_CHANNEL_HEAD, 0.05f),    // 触摸按钮对象创建
+    nose_touch_button_(TOUCH_CHANNEL_NOSE, 0.20f),    // 触摸按钮对象创建
+    belly_touch_button_(TOUCH_CHANNEL_BELLY, 0.05f) { // 触摸按钮对象创建
         
         InitializeADC();
         InitializeCodecI2c();
@@ -667,7 +703,7 @@ public:
         InitializeButtons();      // 按钮事件初始化
         InitializePowerSaveTimer();
         InitializeEarController(); // 初始化耳朵控制器
-        // InitializeMemoryMonitor();  // 初始化内存监控
+        // InitializeMemoryMonitor();  // 初始化内存监控  
         InitializeTools();
         
         // 延迟执行耳朵复位，确保GPIO初始化完成

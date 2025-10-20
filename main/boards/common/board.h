@@ -13,6 +13,8 @@
 #include "camera.h"
 #include "ear/ear_controller.h"
 #include "fan_controller.h"
+#include "assets.h"
+
 
 void* create_board();
 class AudioCodec;
@@ -50,7 +52,7 @@ public:
     virtual void StartNetwork() = 0;
     virtual const char* GetNetworkStateIcon() = 0;
     virtual bool GetBatteryLevel(int &level, bool& charging, bool& discharging);
-    virtual std::string GetJson();
+    virtual std::string GetSystemInfoJson();
     virtual void SetPowerSaveMode(bool enabled) = 0;
     virtual std::string GetBoardJson() = 0;
     virtual std::string GetDeviceStatusJson() = 0;

@@ -30,6 +30,14 @@ void Protocol::OnNetworkError(std::function<void(const std::string& message)> ca
 }
 
 // 设置错误状态，并触发网络错误回调
+void Protocol::OnConnected(std::function<void()> callback) {
+    on_connected_ = callback;
+}
+
+void Protocol::OnDisconnected(std::function<void()> callback) {
+    on_disconnected_ = callback;
+}
+
 void Protocol::SetError(const std::string& message) {
     error_occurred_ = true; // 标记已发生错误
     if (on_network_error_ != nullptr) {

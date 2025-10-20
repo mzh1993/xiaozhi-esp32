@@ -14,28 +14,35 @@
 #define AUDIO_I2S_GPIO_DIN  GPIO_NUM_13
 #define AUDIO_I2S_GPIO_DOUT GPIO_NUM_11
 
-#define AUDIO_CODEC_PA_PIN       GPIO_NUM_40
+#define AUDIO_CODEC_PA_PIN       GPIO_NUM_3
 #define AUDIO_CODEC_I2C_SDA_PIN  GPIO_NUM_5
 #define AUDIO_CODEC_I2C_SCL_PIN  GPIO_NUM_4
 #define AUDIO_CODEC_ES8311_ADDR  ES8311_CODEC_DEFAULT_ADDR
 
-#define BUILTIN_LED_GPIO        GPIO_NUM_9
+#define BUILTIN_LED_GPIO        GPIO_NUM_21
 #define BOOT_BUTTON_GPIO        GPIO_NUM_0
-#define VOLUME_UP_BUTTON_GPIO   GPIO_NUM_45
-#define VOLUME_DOWN_BUTTON_GPIO GPIO_NUM_8
-#define KEY1_BUTTON_GPIO GPIO_NUM_47
-#define KEY2_BUTTON_GPIO GPIO_NUM_48
+// #define VOLUME_UP_BUTTON_GPIO   GPIO_NUM_45
+// #define VOLUME_DOWN_BUTTON_GPIO GPIO_NUM_8
+#define KEY1_BUTTON_GPIO GPIO_NUM_41
+#define KEY2_BUTTON_GPIO GPIO_NUM_42
 
-// 触摸按钮通道定义 - 新增玩具触摸按键（避免与现有功能冲突）
-#define TOUCH_CHANNEL_HEAD      (2) 
+// 触摸按钮通道定义 
 #define TOUCH_CHANNEL_NOSE      (1)  
-#define TOUCH_CHANNEL_BELLY     (3) 
+#define TOUCH_CHANNEL_HEAD      (2) 
+#define TOUCH_CHANNEL_BELLY     (7) 
 
-#define LAMP_GPIO GPIO_NUM_18
-#define FAN_BUTTON_GPIO GPIO_NUM_46  // 风扇按键GPIO
-#define FAN_GPIO GPIO_NUM_21
+// #define LAMP_GPIO GPIO_NUM_18
+// #define FAN_BUTTON_GPIO GPIO_NUM_46  // 风扇按键GPIO
+// #define FAN_GPIO GPIO_NUM_21
 
-#define VBAT_ADC_CHANNEL         ADC_CHANNEL_9 
+// Ear Motors Control Pins for TC118S
+#define EAR_MOTO_EN_GPIO    GPIO_NUM_45   // 耳朵电机电源使能引脚
+#define LEFT_EAR_INA_GPIO   GPIO_NUM_15   // 左耳朵电机控制引脚A
+#define LEFT_EAR_INB_GPIO   GPIO_NUM_16   // 左耳朵电机控制引脚B
+#define RIGHT_EAR_INA_GPIO  GPIO_NUM_8   // 右耳朵电机控制引脚A
+#define RIGHT_EAR_INB_GPIO  GPIO_NUM_9   // 右耳朵电机控制引脚B
+
+#define VBAT_ADC_CHANNEL         ADC_CHANNEL_10 
 #define ADC_ATTEN                ADC_ATTEN_DB_12
 #define ADC_WIDTH                ADC_BITWIDTH_DEFAULT
 #define FULL_BATTERY_VOLTAGE     4100
@@ -60,12 +67,16 @@
 #define DISPLAY_MIRROR_X true
 #define DISPLAY_MIRROR_Y true
 
-// #define BOARD_NAME "astronaut-toys-esp32s3"
+// 预留的接口
+// #define 4G_TXD1_PIN  GPIO_NUM_5
+// #define 4G_RXD1_PIN  GPIO_NUM_4
+// #define S3_TXD0_PIN  GPIO_NUM_5
+// #define S3_RXD0_PIN  GPIO_NUM_4
 
-// Ear Motor Control Pins for TC118S
-#define LEFT_EAR_INA_GPIO   GPIO_NUM_15   // 左耳朵电机控制引脚A
-#define LEFT_EAR_INB_GPIO   GPIO_NUM_16   // 左耳朵电机控制引脚B
-#define RIGHT_EAR_INA_GPIO  GPIO_NUM_17   // 右耳朵电机控制引脚A
-#define RIGHT_EAR_INB_GPIO  GPIO_NUM_18   // 右耳朵电机控制引脚B
+#define EXT_IO_35  GPIO_NUM_35
+#define EXT_IO_36  GPIO_NUM_36
+#define EXT_IO_37  GPIO_NUM_37
+#define EXT_IO_38  GPIO_NUM_38
+#define EXT_IO_39  GPIO_NUM_39
 
 #endif // _BOARD_CONFIG_H_

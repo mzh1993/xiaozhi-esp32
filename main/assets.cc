@@ -251,7 +251,7 @@ bool Assets::Apply() {
 #elif defined(CONFIG_USE_EMOTE_MESSAGE_STYLE)
     auto &board = Board::GetInstance();
     auto display = board.GetDisplay();
-    auto emote_display = dynamic_cast<emote::EmoteDisplay*>(display);
+    auto emote_display = static_cast<emote::EmoteDisplay*>(display);
 
     cJSON* font = cJSON_GetObjectItem(root, "text_font");
     if (cJSON_IsString(font)) {

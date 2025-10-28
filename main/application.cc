@@ -486,11 +486,11 @@ void Application::Start() {
                     // 更新显示
                     display->SetEmotion(emotion_str.c_str());
                     
-                    // 触发耳朵动作（让耳朵控制器自己处理重复检查）
-                    auto ear_controller = Board::GetInstance().GetEarController();
-                    if (ear_controller) {
-                        ear_controller->TriggerEmotion(emotion_str.c_str());
-                    }
+                    // // 触发耳朵动作（让耳朵控制器自己处理重复检查）
+                    // auto ear_controller = Board::GetInstance().GetEarController();
+                    // if (ear_controller) {
+                    //     ear_controller->TriggerEmotion(emotion_str.c_str());
+                    // }
                 });
             }
         } else if (strcmp(type->valuestring, "mcp") == 0) {
@@ -550,17 +550,17 @@ void Application::Start() {
         audio_service_.PlaySound(Lang::Sounds::OGG_SUCCESS);
     }
 
-    // Initialize ear controller emotion mappings
-    auto ear_controller = Board::GetInstance().GetEarController();
-    ESP_LOGI(TAG, "Getting ear controller for emotion mapping initialization: %s", ear_controller ? "valid" : "null");
-    if (ear_controller) {
-        ESP_LOGI(TAG, "Starting ear controller emotion mapping initialization");
-        // 情绪映射已在 Tc118sEarController::Initialize() 中自动设置
+    // // Initialize ear controller emotion mappings
+    // auto ear_controller = Board::GetInstance().GetEarController();
+    // ESP_LOGI(TAG, "Getting ear controller for emotion mapping initialization: %s", ear_controller ? "valid" : "null");
+    // if (ear_controller) {
+    //     ESP_LOGI(TAG, "Starting ear controller emotion mapping initialization");
+    //     // 情绪映射已在 Tc118sEarController::Initialize() 中自动设置
         
-        ESP_LOGI(TAG, "Ear controller emotion mapping initialization completed");
-    } else {
-        ESP_LOGW(TAG, "No ear controller available for emotion mapping initialization");
-    }
+    //     ESP_LOGI(TAG, "Ear controller emotion mapping initialization completed");
+    // } else {
+    //     ESP_LOGW(TAG, "No ear controller available for emotion mapping initialization");
+    // }
     
     // Print heap stats
     SystemInfo::PrintHeapStats(); 
@@ -725,7 +725,7 @@ void Application::SetDeviceState(DeviceState state) {
     led->OnStateChanged();
     
     // 获取耳朵控制器
-    auto ear_controller = board.GetEarController();
+    // auto ear_controller = board.GetEarController();
     
     switch (state) {
         case kDeviceStateUnknown:
@@ -736,10 +736,10 @@ void Application::SetDeviceState(DeviceState state) {
             audio_service_.EnableWakeWordDetection(true);
             
             // 空闲状态时确保耳朵下垂
-            if (ear_controller) {
-                ESP_LOGI(TAG, "Device entering idle state, ensuring ears are down");
-                ear_controller->SetEarInitialPosition();
-            }
+            // if (ear_controller) {
+            //     ESP_LOGI(TAG, "Device entering idle state, ensuring ears are down");
+            //     ear_controller->SetEarInitialPosition();
+            // }
             break;
         case kDeviceStateConnecting:
             display->SetStatus(Lang::Strings::CONNECTING);
@@ -883,12 +883,6 @@ void Application::WakeWordInvoke(const std::string& wake_word) {
                 audio_service_.EnableWakeWordDetection(true);
                 return;
             }
-<<<<<<< HEAD
-        }); 
-    }
-    // 如果设备处于说话状态，则停止说话
-    else if (device_state_ == kDeviceStateSpeaking) {
-=======
         }
 
         ESP_LOGI(TAG, "Wake word detected: %s", wake_word.c_str());
@@ -906,7 +900,6 @@ void Application::WakeWordInvoke(const std::string& wake_word) {
         audio_service_.PlaySound(Lang::Sounds::OGG_POPUP);
 #endif
     } else if (device_state_ == kDeviceStateSpeaking) {
->>>>>>> 99a4fc94bfb12ba6e6d9b72377f4878cf91fc5b6
         Schedule([this]() {
             AbortSpeaking(kAbortReasonNone);
         });

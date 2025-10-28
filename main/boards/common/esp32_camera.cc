@@ -402,8 +402,9 @@ bool Esp32Camera::Capture() {
     }
 
     // 显示预览图片
-    auto display = dynamic_cast<LvglDisplay*>(Board::GetInstance().GetDisplay());
-    if (display != nullptr) {
+    auto display = Board::GetInstance().GetDisplay();
+    auto lvgl_display = static_cast<LvglDisplay*>(display);
+    if (lvgl_display != nullptr) {
         if (!frame_.data) {
             return false;
         }
@@ -516,7 +517,7 @@ bool Esp32Camera::Capture() {
         }
 
         auto image = std::make_unique<LvglAllocatedImage>(data, lvgl_image_size, w, h, stride, color_format);
-        display->SetPreviewImage(std::move(image));
+        lvgl_display->SetPreviewImage(std::move(image));
     }
     return true;
 }

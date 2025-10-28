@@ -50,12 +50,12 @@ private:
     Button boot_button_;
     Button volume_up_button_;
     Button volume_down_button_;
-    Button key1_button_;
-    Button key2_button_;
+    // Button key1_button_;
+    // Button key2_button_;
     // 添加 OLED 屏幕配置
     esp_lcd_panel_io_handle_t panel_io_ = nullptr;
     esp_lcd_panel_handle_t panel_ = nullptr;
-    Display* display_ = nullptr;
+    // Display* display_ = nullptr;
     // 添加电池电量配置
     adc_oneshot_unit_handle_t adc1_handle_;
     adc_cali_handle_t adc1_cali_handle_;
@@ -280,31 +280,31 @@ private:
         ESP_LOGI(TAG, "Memory monitor started");
     }
 
-    void InitializePowerSaveTimer() {
-        power_save_timer_ = new PowerSaveTimer(-1, 60, 180);
-        power_save_timer_->OnEnterSleepMode([this]() {
-            ESP_LOGI(TAG, "Enabling sleep mode");
-            auto display = GetDisplay();
-            display->SetChatMessage("system", "");
-            display->SetEmotion("sleepy");
+    // void InitializePowerSaveTimer() {
+    //     power_save_timer_ = new PowerSaveTimer(-1, 60, 180);
+    //     power_save_timer_->OnEnterSleepMode([this]() {
+    //         ESP_LOGI(TAG, "Enabling sleep mode");
+    //         auto display = GetDisplay();
+    //         display->SetChatMessage("system", "");
+    //         display->SetEmotion("sleepy");
             
-            auto codec = GetAudioCodec();
-            codec->EnableInput(false);
-            // 停止唤醒词检测
-            // Application::GetInstance().StopWakeWordDetection();
-        });
-        power_save_timer_->OnExitSleepMode([this]() {
-            auto codec = GetAudioCodec();
-            codec->EnableInput(true);
+    //         auto codec = GetAudioCodec();
+    //         codec->EnableInput(false);
+    //         // 停止唤醒词检测
+    //         // Application::GetInstance().StopWakeWordDetection();
+    //     });
+    //     power_save_timer_->OnExitSleepMode([this]() {
+    //         auto codec = GetAudioCodec();
+    //         codec->EnableInput(true);
             
-            auto display = GetDisplay();
-            display->SetChatMessage("system", "");
-            display->SetEmotion("neutral");
-            // 重新启动唤醒词检测
-            // Application::GetInstance().StartWakeWordDetection();
-        });
-        power_save_timer_->SetEnabled(true);
-    }
+    //         auto display = GetDisplay();
+    //         display->SetChatMessage("system", "");
+    //         display->SetEmotion("neutral");
+    //         // 重新启动唤醒词检测
+    //         // Application::GetInstance().StartWakeWordDetection();
+    //     });
+    //     power_save_timer_->SetEnabled(true);
+    // }
 
     void InitializeCodecI2c() {
         i2c_master_bus_config_t i2c_bus_cfg = {
@@ -322,87 +322,87 @@ private:
         ESP_ERROR_CHECK(i2c_new_master_bus(&i2c_bus_cfg, &codec_i2c_bus_));
     }
 
-    void InitializeSsd1306Display() {
-        // SSD1306 config
-        esp_lcd_panel_io_i2c_config_t io_config = {
-            .dev_addr = 0x3C,
-            .on_color_trans_done = nullptr,
-            .user_ctx = nullptr,
-            .control_phase_bytes = 1,
-            .dc_bit_offset = 6,
-            .lcd_cmd_bits = 8,
-            .lcd_param_bits = 8,
-            .flags = {
-                .dc_low_on_data = 0,
-                .disable_control_phase = 0,
-            },
-            .scl_speed_hz = 400 * 1000,
-        };
+//     void InitializeSsd1306Display() {
+//         // SSD1306 config
+//         esp_lcd_panel_io_i2c_config_t io_config = {
+//             .dev_addr = 0x3C,
+//             .on_color_trans_done = nullptr,
+//             .user_ctx = nullptr,
+//             .control_phase_bytes = 1,
+//             .dc_bit_offset = 6,
+//             .lcd_cmd_bits = 8,
+//             .lcd_param_bits = 8,
+//             .flags = {
+//                 .dc_low_on_data = 0,
+//                 .disable_control_phase = 0,
+//             },
+//             .scl_speed_hz = 400 * 1000,
+//         };
 
-        ESP_ERROR_CHECK(esp_lcd_new_panel_io_i2c_v2(codec_i2c_bus_, &io_config, &panel_io_));
+//         ESP_ERROR_CHECK(esp_lcd_new_panel_io_i2c_v2(codec_i2c_bus_, &io_config, &panel_io_));
 
-        ESP_LOGI(TAG, "Install SSD1306 driver");
-        esp_lcd_panel_dev_config_t panel_config = {};
-        panel_config.reset_gpio_num = -1;
-        panel_config.bits_per_pixel = 1;
+//         ESP_LOGI(TAG, "Install SSD1306 driver");
+//         esp_lcd_panel_dev_config_t panel_config = {};
+//         panel_config.reset_gpio_num = -1;
+//         panel_config.bits_per_pixel = 1;
 
-        esp_lcd_panel_ssd1306_config_t ssd1306_config = {
-            .height = static_cast<uint8_t>(DISPLAY_HEIGHT),
-        };
-        panel_config.vendor_config = &ssd1306_config;
+//         esp_lcd_panel_ssd1306_config_t ssd1306_config = {
+//             .height = static_cast<uint8_t>(DISPLAY_HEIGHT),
+//         };
+//         panel_config.vendor_config = &ssd1306_config;
 
-#ifdef SH1106
-        ESP_ERROR_CHECK(esp_lcd_new_panel_sh1106(panel_io_, &panel_config, &panel_));
-#else
-        ESP_ERROR_CHECK(esp_lcd_new_panel_ssd1306(panel_io_, &panel_config, &panel_));
-#endif
-        ESP_LOGI(TAG, "SSD1306 driver installed");
+// #ifdef SH1106
+//         ESP_ERROR_CHECK(esp_lcd_new_panel_sh1106(panel_io_, &panel_config, &panel_));
+// #else
+//         ESP_ERROR_CHECK(esp_lcd_new_panel_ssd1306(panel_io_, &panel_config, &panel_));
+// #endif
+//         ESP_LOGI(TAG, "SSD1306 driver installed");
 
-        // Reset the display
-        ESP_ERROR_CHECK(esp_lcd_panel_reset(panel_));
-        if (esp_lcd_panel_init(panel_) != ESP_OK) {
-            ESP_LOGE(TAG, "Failed to initialize display");
-            display_ = new NoDisplay();
-            return;
-        }
+//         // Reset the display
+//         ESP_ERROR_CHECK(esp_lcd_panel_reset(panel_));
+//         if (esp_lcd_panel_init(panel_) != ESP_OK) {
+//             ESP_LOGE(TAG, "Failed to initialize display");
+//             display_ = new NoDisplay();
+//             return;
+//         }
 
-        // Set the display to on
-        ESP_LOGI(TAG, "Turning display on");
-        ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(panel_, true));
+//         // Set the display to on
+//         ESP_LOGI(TAG, "Turning display on");
+//         ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(panel_, true));
 
-        display_ = new OledDisplay(panel_io_, panel_, DISPLAY_WIDTH, DISPLAY_HEIGHT, DISPLAY_MIRROR_X, DISPLAY_MIRROR_Y,
-            {&font_puhui_14_1, &font_awesome_14_1});
-    }
+//         display_ = new OledDisplay(panel_io_, panel_, DISPLAY_WIDTH, DISPLAY_HEIGHT, DISPLAY_MIRROR_X, DISPLAY_MIRROR_Y,
+//             {&font_puhui_14_1, &font_awesome_14_1});
+//     }
 
-    void InitializeADC() {
-        adc_oneshot_unit_init_cfg_t init_config1 = {
-            .unit_id = ADC_UNIT_1
-        };
-        ESP_ERROR_CHECK(adc_oneshot_new_unit(&init_config1, &adc1_handle_));
+//     void InitializeADC() {
+//         adc_oneshot_unit_init_cfg_t init_config1 = {
+//             .unit_id = ADC_UNIT_1
+//         };
+//         ESP_ERROR_CHECK(adc_oneshot_new_unit(&init_config1, &adc1_handle_));
 
-        adc_oneshot_chan_cfg_t chan_config = {
-            .atten = ADC_ATTEN,
-            .bitwidth = ADC_WIDTH,
-        };
-        ESP_ERROR_CHECK(adc_oneshot_config_channel(adc1_handle_, VBAT_ADC_CHANNEL, &chan_config));
+//         adc_oneshot_chan_cfg_t chan_config = {
+//             .atten = ADC_ATTEN,
+//             .bitwidth = ADC_WIDTH,
+//         };
+//         ESP_ERROR_CHECK(adc_oneshot_config_channel(adc1_handle_, VBAT_ADC_CHANNEL, &chan_config));
 
-        adc_cali_handle_t handle = NULL;
-        esp_err_t ret = ESP_FAIL;
+//         adc_cali_handle_t handle = NULL;
+//         esp_err_t ret = ESP_FAIL;
 
-#if ADC_CALI_SCHEME_CURVE_FITTING_SUPPORTED
-        adc_cali_curve_fitting_config_t cali_config = {
-            .unit_id = ADC_UNIT_1,
-            .atten = ADC_ATTEN,
-            .bitwidth = ADC_WIDTH,
-        };
-        ret = adc_cali_create_scheme_curve_fitting(&cali_config, &handle);
-        if (ret == ESP_OK) {
-            do_calibration_ = true;
-            adc1_cali_handle_ = handle;
-            ESP_LOGI(TAG, "ADC Curve Fitting calibration succeeded");
-        }
-#endif // ADC_CALI_SCHEME_CURVE_FITTING_SUPPORTED
-    }
+// #if ADC_CALI_SCHEME_CURVE_FITTING_SUPPORTED
+//         adc_cali_curve_fitting_config_t cali_config = {
+//             .unit_id = ADC_UNIT_1,
+//             .atten = ADC_ATTEN,
+//             .bitwidth = ADC_WIDTH,
+//         };
+//         ret = adc_cali_create_scheme_curve_fitting(&cali_config, &handle);
+//         if (ret == ESP_OK) {
+//             do_calibration_ = true;
+//             adc1_cali_handle_ = handle;
+//             ESP_LOGI(TAG, "ADC Curve Fitting calibration succeeded");
+//         }
+// #endif // ADC_CALI_SCHEME_CURVE_FITTING_SUPPORTED
+//     }
 
     // 屏蔽触摸传感器初始化 - 调试模式下不需要
     void InitializeTouchSensor() {
@@ -532,15 +532,15 @@ private:
                 volume = 100;
             }
             codec->SetOutputVolume(volume);
-            if (display_) {
-                display_->ShowNotification(Lang::Strings::VOLUME + std::to_string(volume));
-            }
+            // if (display_) {
+            //     display_->ShowNotification(Lang::Strings::VOLUME + std::to_string(volume));
+            // }
         });
         volume_up_button_.OnLongPress([this]() {
             GetAudioCodec()->SetOutputVolume(100);
-            if (display_) {
-                 display_->ShowNotification(Lang::Strings::MAX_VOLUME);
-            }
+            // if (display_) {
+            //      display_->ShowNotification(Lang::Strings::MAX_VOLUME);
+            // }
         });
 
         volume_down_button_.OnClick([this]() {
@@ -550,15 +550,15 @@ private:
                 volume = 0;
             }
             codec->SetOutputVolume(volume);
-            if (display_) {
-                 display_->ShowNotification(Lang::Strings::VOLUME + std::to_string(volume));
-            }
+            // if (display_) {
+            //      display_->ShowNotification(Lang::Strings::VOLUME + std::to_string(volume));
+            // }
         });
         volume_down_button_.OnLongPress([this]() {
             GetAudioCodec()->SetOutputVolume(0);
-            if (display_) {
-                 display_->ShowNotification(Lang::Strings::MUTED);
-            }
+            // if (display_) {
+            //      display_->ShowNotification(Lang::Strings::MUTED);
+            // }
         });
 
         // 新增玩具触摸按键事件处理 - 使用新的情绪+文本绑定系统
@@ -567,9 +567,9 @@ private:
             std::string touch_text = GetTouchResponseText("head", false);
             std::string action_text = "抚摸头部：" + touch_text;
             
-            if (display_) {
-                display_->ShowNotification(action_text);
-            }
+            // if (display_) {
+            //     display_->ShowNotification(action_text);
+            // }
             // 触发耳朵动作和情绪
             TriggerEarActionForTouch("head", false);
             // 使用新的事件接口，发送带有动作描述的文本
@@ -581,9 +581,9 @@ private:
             std::string touch_text = GetTouchResponseText("head", true);
             std::string action_text = "长时间抚摸头部：" + touch_text;
             
-            if (display_) {
-                display_->ShowNotification(action_text);
-            }
+            // if (display_) {
+            //     display_->ShowNotification(action_text);
+            // }
             // 触发耳朵动作和情绪
             TriggerEarActionForTouch("head", true);
             // 使用新的事件接口
@@ -595,9 +595,9 @@ private:
             std::string touch_text = GetTouchResponseText("nose", false);
             std::string action_text = "抚摸鼻子：" + touch_text;
             
-            if (display_) {
-                display_->ShowNotification(action_text);
-            }
+            // if (display_) {
+            //     display_->ShowNotification(action_text);
+            // }
             // 触发耳朵动作和情绪
             TriggerEarActionForTouch("nose", false);
             // 使用新的事件接口，发送带有动作描述的文本
@@ -609,9 +609,9 @@ private:
             std::string touch_text = GetTouchResponseText("nose", true);
             std::string action_text = "长时间抚摸鼻子：" + touch_text;
             
-            if (display_) {
-                display_->ShowNotification(action_text);
-            }
+            // if (display_) {
+            //     display_->ShowNotification(action_text);
+            // }
             // 触发耳朵动作和情绪
             TriggerEarActionForTouch("nose", true);
             // 使用新的事件接口
@@ -623,9 +623,9 @@ private:
             std::string touch_text = GetTouchResponseText("belly", false);
             std::string action_text = "抚摸肚子：" + touch_text;
             
-            if (display_) {
-                display_->ShowNotification(action_text);
-            }
+            // if (display_) {
+            //     display_->ShowNotification(action_text);
+            // }
             // 触发耳朵动作和情绪
             TriggerEarActionForTouch("belly", false);
             // 使用新的事件接口，发送带有动作描述的文本
@@ -637,46 +637,46 @@ private:
             std::string touch_text = GetTouchResponseText("belly", true);
             std::string action_text = "长时间抚摸肚子：" + touch_text;
             
-            if (display_) {
-                display_->ShowNotification(action_text);
-            }
+            // if (display_) {
+            //     display_->ShowNotification(action_text);
+            // }
             // 触发耳朵动作和情绪
             TriggerEarActionForTouch("belly", true);
             // 使用新的事件接口
             Application::GetInstance().PostTouchEvent(action_text);
         });
 
-        // KEY2 按钮 - 改为音量控制：单击-10，双击+10
-        key2_button_.OnClick([this]() {
-            // ESP_LOGI(TAG, "KEY2 单击，音量减10");
-            auto codec = GetAudioCodec();
-            int vol = codec->output_volume() - 10;
-            if (vol < 0) vol = 0;
-            codec->SetOutputVolume(vol);
-            if (display_) {
-                display_->ShowNotification("音量：" + std::to_string(vol));
-            }
-        });
+        // // KEY2 按钮 - 改为音量控制：单击-10，双击+10
+        // key2_button_.OnClick([this]() {
+        //     // ESP_LOGI(TAG, "KEY2 单击，音量减10");
+        //     auto codec = GetAudioCodec();
+        //     int vol = codec->output_volume() - 10;
+        //     if (vol < 0) vol = 0;
+        //     codec->SetOutputVolume(vol);
+        //     if (display_) {
+        //         display_->ShowNotification("音量：" + std::to_string(vol));
+        //     }
+        // });
 
-        key2_button_.OnDoubleClick([this]() {
-            // ESP_LOGI(TAG, "KEY2 双击，音量加10");
-            auto codec = GetAudioCodec();
-            int vol = codec->output_volume() + 10;
-            if (vol > 100) vol = 100;
-            codec->SetOutputVolume(vol);
-            if (display_) {
-                display_->ShowNotification("音量：" + std::to_string(vol));
-            }
-        });
+        // key2_button_.OnDoubleClick([this]() {
+        //     // ESP_LOGI(TAG, "KEY2 双击，音量加10");
+        //     auto codec = GetAudioCodec();
+        //     int vol = codec->output_volume() + 10;
+        //     if (vol > 100) vol = 100;
+        //     codec->SetOutputVolume(vol);
+        //     if (display_) {
+        //         display_->ShowNotification("音量：" + std::to_string(vol));
+        //     }
+        // });
 
-        // 长按功能可留空或用于其他用途
-        key2_button_.OnLongPress([this]() {
-            ESP_LOGI(TAG, "KEY2 长按，无操作");
-        });
+        // // 长按功能可留空或用于其他用途
+        // key2_button_.OnLongPress([this]() {
+        //     ESP_LOGI(TAG, "KEY2 长按，无操作");
+        // });
     }
 
     void InitializeTools() {
-        static LampController lamp(LAMP_GPIO);
+        // static LampController lamp(LAMP_GPIO);
         
         // 屏蔽风扇控制器初始化 - 调试模式下不需要
         // fan_controller_ = new FanController(FAN_BUTTON_GPIO, FAN_GPIO, LEDC_CHANNEL_0);
@@ -690,25 +690,25 @@ public:
     boot_button_(BOOT_BUTTON_GPIO),
     volume_up_button_(VOLUME_UP_BUTTON_GPIO),
     volume_down_button_(VOLUME_DOWN_BUTTON_GPIO),
-    key1_button_(KEY1_BUTTON_GPIO),
-    key2_button_(KEY2_BUTTON_GPIO),
+    // key1_button_(KEY1_BUTTON_GPIO),
+    // key2_button_(KEY2_BUTTON_GPIO),
     head_touch_button_(TOUCH_CHANNEL_HEAD, 0.05f),    // 触摸按钮对象创建
     nose_touch_button_(TOUCH_CHANNEL_NOSE, 0.20f),    // 触摸按钮对象创建
     belly_touch_button_(TOUCH_CHANNEL_BELLY, 0.05f) { // 触摸按钮对象创建
         
-        InitializeADC();
+        // InitializeADC();
         InitializeCodecI2c();
-        InitializeSsd1306Display();
-        InitializeTouchSensor();  // 触摸传感器初始化（已屏蔽）
+        // InitializeSsd1306Display();
+        // InitializeTouchSensor();  // 触摸传感器初始化（已屏蔽）
         InitializeButtons();      // 按钮事件初始化
-        InitializePowerSaveTimer();
-        InitializeEarController(); // 初始化耳朵控制器
+        // InitializePowerSaveTimer();
+        // InitializeEarController(); // 初始化耳朵控制器
         // InitializeMemoryMonitor();  // 初始化内存监控  
-        InitializeTools();
+        // InitializeTools();
         
         // 延迟执行耳朵复位，确保GPIO初始化完成
         // ESP_LOGI(TAG, "Scheduling delayed ear reset for debug mode");
-        DelayedEarReset();
+        // DelayedEarReset();
         
         // // 调试模式说明
         // ESP_LOGI(TAG, "=== EAR CONTROLLER DEBUG MODE ENABLED ===");
@@ -749,9 +749,9 @@ public:
            AUDIO_CODEC_ES8311_ADDR, false);
        return &audio_codec;
    }
-    virtual Display* GetDisplay() override {
-        return display_;
-    }
+    // virtual Display* GetDisplay() override {
+    //     return display_;
+    // }
 
     virtual EarController* GetEarController() override {
         ESP_LOGI(TAG, "GetEarController called, returning: %s", ear_controller_ ? "valid" : "null");
@@ -763,52 +763,52 @@ public:
         return nullptr; // 调试模式下风扇控制器被禁用
     }
 
-    virtual bool GetBatteryLevel(int &level, bool &charging, bool &discharging) {
-        int64_t current_time = esp_timer_get_time() / 1000; // 转换为毫秒
+    // virtual bool GetBatteryLevel(int &level, bool &charging, bool &discharging) {
+    //     int64_t current_time = esp_timer_get_time() / 1000; // 转换为毫秒
         
-        // 仅当不是首次调用且距离上次读取不到30秒，才返回缓存值
-        if (last_battery_read_time_ > 0 && current_time - last_battery_read_time_ < BATTERY_READ_INTERVAL_MS) {
-            level = cached_battery_level_;
-            charging = cached_battery_charging_;
-            discharging = cached_battery_discharging_;
-            return true;
-        }
+    //     // 仅当不是首次调用且距离上次读取不到30秒，才返回缓存值
+    //     if (last_battery_read_time_ > 0 && current_time - last_battery_read_time_ < BATTERY_READ_INTERVAL_MS) {
+    //         level = cached_battery_level_;
+    //         charging = cached_battery_charging_;
+    //         discharging = cached_battery_discharging_;
+    //         return true;
+    //     }
         
-        if (!adc1_handle_) {
-            InitializeADC();
-        }
+    //     if (!adc1_handle_) {
+    //         InitializeADC();
+    //     }
 
-        int raw_value = 0;
-        int voltage = 0;
+    //     int raw_value = 0;
+    //     int voltage = 0;
 
-        ESP_ERROR_CHECK(adc_oneshot_read(adc1_handle_, VBAT_ADC_CHANNEL, &raw_value));
+    //     ESP_ERROR_CHECK(adc_oneshot_read(adc1_handle_, VBAT_ADC_CHANNEL, &raw_value));
 
-        if (do_calibration_) {
-            ESP_ERROR_CHECK(adc_cali_raw_to_voltage(adc1_cali_handle_, raw_value, &voltage));
-            voltage = voltage * 3 / 2; // compensate for voltage divider
-            ESP_LOGI(TAG, "Calibrated voltage: %d mV", voltage);
-        } else {
-            ESP_LOGI(TAG, "Raw ADC value: %d", raw_value);
-            voltage = raw_value;
-        }
+    //     if (do_calibration_) {
+    //         ESP_ERROR_CHECK(adc_cali_raw_to_voltage(adc1_cali_handle_, raw_value, &voltage));
+    //         voltage = voltage * 3 / 2; // compensate for voltage divider
+    //         ESP_LOGI(TAG, "Calibrated voltage: %d mV", voltage);
+    //     } else {
+    //         ESP_LOGI(TAG, "Raw ADC value: %d", raw_value);
+    //         voltage = raw_value;
+    //     }
 
-        voltage = voltage < EMPTY_BATTERY_VOLTAGE ? EMPTY_BATTERY_VOLTAGE : voltage;
-        voltage = voltage > FULL_BATTERY_VOLTAGE ? FULL_BATTERY_VOLTAGE : voltage;
+    //     voltage = voltage < EMPTY_BATTERY_VOLTAGE ? EMPTY_BATTERY_VOLTAGE : voltage;
+    //     voltage = voltage > FULL_BATTERY_VOLTAGE ? FULL_BATTERY_VOLTAGE : voltage;
 
-        // 计算电量百分比
-        level = (voltage - EMPTY_BATTERY_VOLTAGE) * 100 / (FULL_BATTERY_VOLTAGE - EMPTY_BATTERY_VOLTAGE);
+    //     // 计算电量百分比
+    //     level = (voltage - EMPTY_BATTERY_VOLTAGE) * 100 / (FULL_BATTERY_VOLTAGE - EMPTY_BATTERY_VOLTAGE);
 
-        // charging = false;
-        ESP_LOGI(TAG, "Battery Level: %d%%, Charging: %s", level, charging ? "Yes" : "No");
+    //     // charging = false;
+    //     ESP_LOGI(TAG, "Battery Level: %d%%, Charging: %s", level, charging ? "Yes" : "No");
         
-        // 更新缓存和时间戳
-        cached_battery_level_ = level;
-        cached_battery_charging_ = charging;
-        cached_battery_discharging_ = discharging;
-        last_battery_read_time_ = current_time;
+    //     // 更新缓存和时间戳
+    //     cached_battery_level_ = level;
+    //     cached_battery_charging_ = charging;
+    //     cached_battery_discharging_ = discharging;
+    //     last_battery_read_time_ = current_time;
         
-        return true;
-    }
+    //     return true;
+    // }
 
 };
 

@@ -88,6 +88,7 @@ private:
     TaskHandle_t main_event_loop_task_handle_ = nullptr;
 
     void OnWakeWordDetected();
+    void OnClockTimer();
     void CheckNewVersion(Ota& ota);
     void CheckAssetsVersion();
     void ShowActivationCode(const std::string& code, const std::string& message);

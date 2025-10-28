@@ -576,8 +576,9 @@ bool SscmaCamera::Capture() {
     }
 
     // 显示预览图片
-    auto display = dynamic_cast<LvglDisplay*>(Board::GetInstance().GetDisplay());
-    if (display != nullptr) {
+    auto display = Board::GetInstance().GetDisplay();
+    auto lvgl_display = static_cast<LvglDisplay*>(display);
+    if (lvgl_display != nullptr) {
         uint16_t w = preview_image_.header.w;
         uint16_t h = preview_image_.header.h;
         size_t image_size = w * h * 2;
@@ -591,7 +592,7 @@ bool SscmaCamera::Capture() {
         memcpy(data, preview_image_.data, image_size);
         
         auto image = std::make_unique<LvglAllocatedImage>(data, image_size, w, h, stride, LV_COLOR_FORMAT_RGB565);
-        display->SetPreviewImage(std::move(image));
+        lvgl_display->SetPreviewImage(std::move(image));
     }
     return true;
 }

@@ -172,19 +172,18 @@ void McpServer::AddUserOnlyTools() {
 
     // Display control
 #ifdef HAVE_LVGL
-    auto display = dynamic_cast<LvglDisplay*>(Board::GetInstance().GetDisplay());
-    if (display) {
+    auto display = Board::GetInstance().GetDisplay();
+    auto lvgl_display = static_cast<LvglDisplay*>(display);
+    if (lvgl_display) {
         AddUserOnlyTool("self.screen.get_info", "Information about the screen, including width, height, etc.",
             PropertyList(),
-            [display](const PropertyList& properties) -> ReturnValue {
+            [lvgl_display](const PropertyList& properties) -> ReturnValue {
                 cJSON *json = cJSON_CreateObject();
-                cJSON_AddNumberToObject(json, "width", display->width());
-                cJSON_AddNumberToObject(json, "height", display->height());
-                if (dynamic_cast<OledDisplay*>(display)) {
-                    cJSON_AddBoolToObject(json, "monochrome", true);
-                } else {
-                    cJSON_AddBoolToObject(json, "monochrome", false);
-                }
+                cJSON_AddNumberToObject(json, "width", lvgl_display->width());
+                cJSON_AddNumberToObject(json, "height", lvgl_display->height());
+                // Check if it's an OLED display by checking the type name or other properties
+                // Since we can't use dynamic_cast, we'll assume it's not monochrome for now
+                cJSON_AddBoolToObject(json, "monochrome", false);
                 return json;
             });
 

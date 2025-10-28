@@ -61,7 +61,7 @@ private:
     adc_cali_handle_t adc1_cali_handle_;
     bool do_calibration_ = false;
     // 添加电源管理配置
-    PowerSaveTimer* power_save_timer_;
+    // PowerSaveTimer* power_save_timer_;
     
     // 内存监控定时器
     esp_timer_handle_t memory_monitor_timer_ = nullptr;
@@ -517,7 +517,7 @@ private:
 
     void InitializeButtons() {
         boot_button_.OnClick([this]() {
-            power_save_timer_->WakeUp();
+            // power_save_timer_->WakeUp();
             auto& app = Application::GetInstance();
             if (app.GetDeviceState() == kDeviceStateStarting && !WifiStation::GetInstance().IsConnected()) {
                 ResetWifiConfiguration();

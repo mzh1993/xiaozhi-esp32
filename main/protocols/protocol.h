@@ -74,6 +74,8 @@ public:
     virtual void SendAbortSpeaking(AbortReason reason);
     virtual void SendMcpMessage(const std::string& message);
     virtual void SendMessage(const std::string& message);
+    virtual void SendTouchEvent(const std::string& text);
+    virtual void SendEvent(const std::string& event_type, const std::string& data);
 
 protected:
     std::function<void(const cJSON* root)> on_incoming_json_;

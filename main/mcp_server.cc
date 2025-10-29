@@ -198,9 +198,9 @@ void McpServer::AddUserOnlyTools() {
                 auto quality = properties["quality"].value<int>();
 
                 std::string jpeg_data;
-                if (!display->SnapshotToJpeg(jpeg_data, quality)) {
-                    throw std::runtime_error("Failed to snapshot screen");
-                }
+                // if (!display->SnapshotToJpeg(jpeg_data, quality)) {
+                //     throw std::runtime_error("Failed to snapshot screen");
+                // }
 
                 ESP_LOGI(TAG, "Upload snapshot %u bytes to %s", jpeg_data.size(), url.c_str());
                 
@@ -278,7 +278,7 @@ void McpServer::AddUserOnlyTools() {
                 http->Close();
 
                 auto image = std::make_unique<LvglAllocatedImage>(data, content_length);
-                display->SetPreviewImage(std::move(image));
+                // display->SetPreviewImage(std::move(image));
                 return true;
             });
 #endif // CONFIG_LV_USE_SNAPSHOT

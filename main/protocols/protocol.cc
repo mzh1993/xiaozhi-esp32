@@ -111,15 +111,87 @@ bool Protocol::IsTimeout() const {
 }
 
 /**
- * 发送事件消息
+ * 发送事件消息（已废弃，保留用于兼容）
  * @param message 事件消息
  * 
- * 作用：通过复用listen消息类型发送事件消息给服务器
- * 事件被标识为特殊的监听模式，服务器可以响应触摸交互
+ * @deprecated 此方法使用 detect 状态发送，服务器已不支持长文本
+ * 请使用 SendTouchEvent() 替代
  */
 void Protocol::SendMessage(const std::string& message) {
-    // 构造 JSON 消息，包含 session_id、类型和状态
+    // 使用 STT 类型发送触摸事件，作为用户输入
+    SendTouchEvent(message);
+}
+
+/**
+ * 发送触摸事件消息
+ * @param text 触摸事件的文本内容
+ * 
+ * 方案说明：
+ * 1. 优先使用标准的 listen+detect 格式（与唤醒词相同）
+ *    优点：协议标准，服务器一定支持
+ *    缺点：如果服务器限制 detect 只能发送短文本，长文本会被拒绝
+ * 
+ * 2. 备选：如果检测到文本过长，使用 MCP notification
+ *    优点：支持长文本，符合 JSON-RPC 2.0 标准
+ *    缺点：notifications/touch 是自定义方法名，需要服务器端支持
+ * 
+ * 注意：notification 不需要服务器响应（无 id 字段），但服务器必须识别该 method 才会处理
+ */
+void Protocol::SendTouchEvent(const std::string& text) {
+    // 对 JSON 字符串进行转义处理
+    std::string escaped_text = text;
+    size_t pos = 0;
+    while ((pos = escaped_text.find('"', pos)) != std::string::npos) {
+        escaped_text.replace(pos, 1, "\\\"");
+        pos += 2;
+    }
+    pos = 0;
+    while ((pos = escaped_text.find('\n', pos)) != std::string::npos) {
+        escaped_text.replace(pos, 1, "\\n");
+        pos += 2;
+    }
+
+    // 方案1：优先使用标准的 listen+detect（与唤醒词格式一致）
+    // 这是协议标准方式，服务器应该支持
+    // 如果服务器限制文本长度，会返回错误，此时可以考虑使用方案2
     std::string json = "{\"session_id\":\"" + session_id_ + 
-    "\",\"type\":\"listen\",\"state\":\"detect\",\"text\":\"" + message + "\"}";
+                      "\",\"type\":\"listen\",\"state\":\"detect\",\"text\":\"" + escaped_text + "\"}";
+    SendText(json);
+    
+    // 如果需要使用 MCP notification 方案（长文本），可以取消下面的注释：
+    // std::string payload = "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/touch\",\"params\":{\"text\":\"" + 
+    //                       escaped_text + "\",\"source\":\"touch\"}}";
+    // SendMcpMessage(payload);
+}
+
+/**
+ * 发送通用事件消息（使用 event 类型，如果服务器支持）
+ * @param event_type 事件类型（如 "touch", "button" 等）
+ * @param data 事件数据/内容
+ * 
+ * 作用：发送设备事件给服务器
+ * 注意：此方法使用非标准类型，需要服务器支持
+ * 建议优先使用 SendTouchEvent() 使用标准的 STT 类型
+ */
+void Protocol::SendEvent(const std::string& event_type, const std::string& data) {
+    // 构造 JSON 消息，包含 session_id、类型、事件类型和数据
+    // 需要对 JSON 字符串进行转义处理
+    std::string escaped_data = data;
+    // 简单的 JSON 转义：将 " 替换为 \"
+    size_t pos = 0;
+    while ((pos = escaped_data.find('"', pos)) != std::string::npos) {
+        escaped_data.replace(pos, 1, "\\\"");
+        pos += 2;
+    }
+    // 处理换行符
+    pos = 0;
+    while ((pos = escaped_data.find('\n', pos)) != std::string::npos) {
+        escaped_data.replace(pos, 1, "\\n");
+        pos += 2;
+    }
+    
+    std::string json = "{\"session_id\":\"" + session_id_ + 
+                      "\",\"type\":\"event\",\"event\":\"" + event_type + 
+                      "\",\"data\":\"" + escaped_data + "\"}";
     SendText(json); // 发送消息
 }

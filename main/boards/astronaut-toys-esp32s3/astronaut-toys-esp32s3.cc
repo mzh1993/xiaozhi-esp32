@@ -565,7 +565,8 @@ private:
         head_touch_button_.OnClick([this]() {
             ESP_LOGI(TAG, "Head touch button clicked - Channel: %d", TOUCH_CHANNEL_HEAD);
             std::string touch_text = GetTouchResponseText("head", false);
-            std::string action_text = "抚摸头部：" + touch_text;
+            std::string action_text = "摸摸头哦~";
+            // std::string action_text = "抚摸头部：" + touch_text;
             
             // if (display_) {
             //     display_->ShowNotification(action_text);
@@ -579,7 +580,8 @@ private:
         head_touch_button_.OnLongPress([this]() {
             ESP_LOGI(TAG, "Head touch button long pressed - Channel: %d", TOUCH_CHANNEL_HEAD);
             std::string touch_text = GetTouchResponseText("head", true);
-            std::string action_text = "长时间抚摸头部：" + touch_text;
+            std::string action_text = "长时间抚摸头哦~";
+            // std::string action_text = "长时间抚摸头部：" + touch_text;
             
             // if (display_) {
             //     display_->ShowNotification(action_text);
@@ -593,7 +595,8 @@ private:
         nose_touch_button_.OnClick([this]() {
             ESP_LOGI(TAG, "Nose touch button clicked - Channel: %d", TOUCH_CHANNEL_NOSE);
             std::string touch_text = GetTouchResponseText("nose", false);
-            std::string action_text = "抚摸鼻子：" + touch_text;
+            std::string action_text = "抚摸鼻子哦~";
+            // std::string action_text = "抚摸鼻子：" + touch_text;
             
             // if (display_) {
             //     display_->ShowNotification(action_text);
@@ -607,7 +610,8 @@ private:
         nose_touch_button_.OnLongPress([this]() {
             ESP_LOGI(TAG, "Nose touch button long pressed - Channel: %d", TOUCH_CHANNEL_NOSE);
             std::string touch_text = GetTouchResponseText("nose", true);
-            std::string action_text = "长时间抚摸鼻子：" + touch_text;
+            std::string action_text = "长时间抚摸鼻子哦~";
+            // std::string action_text = "长时间抚摸鼻子：" + touch_text;
             
             // if (display_) {
             //     display_->ShowNotification(action_text);
@@ -621,7 +625,8 @@ private:
         belly_touch_button_.OnClick([this]() {
             ESP_LOGI(TAG, "Belly touch button clicked - Channel: %d", TOUCH_CHANNEL_BELLY);
             std::string touch_text = GetTouchResponseText("belly", false);
-            std::string action_text = "抚摸肚子：" + touch_text;
+            std::string action_text = "抚摸肚子哦~";
+            // std::string action_text = "抚摸肚子：" + touch_text;
             
             // if (display_) {
             //     display_->ShowNotification(action_text);
@@ -635,7 +640,8 @@ private:
         belly_touch_button_.OnLongPress([this]() {
             ESP_LOGI(TAG, "Belly touch button long pressed - Channel: %d", TOUCH_CHANNEL_BELLY);
             std::string touch_text = GetTouchResponseText("belly", true);
-            std::string action_text = "长时间抚摸肚子：" + touch_text;
+            std::string action_text = "一直抚摸你肚子";
+            // std::string action_text = "长时间抚摸肚子：" + touch_text;
             
             // if (display_) {
             //     display_->ShowNotification(action_text);
@@ -692,14 +698,14 @@ public:
     volume_down_button_(VOLUME_DOWN_BUTTON_GPIO),
     // key1_button_(KEY1_BUTTON_GPIO),
     // key2_button_(KEY2_BUTTON_GPIO),
-    head_touch_button_(TOUCH_CHANNEL_HEAD, 0.05f),    // 触摸按钮对象创建
-    nose_touch_button_(TOUCH_CHANNEL_NOSE, 0.20f),    // 触摸按钮对象创建
-    belly_touch_button_(TOUCH_CHANNEL_BELLY, 0.05f) { // 触摸按钮对象创建
+    head_touch_button_(TOUCH_CHANNEL_HEAD, 0.55f),    // 触摸按钮对象创建
+    nose_touch_button_(TOUCH_CHANNEL_NOSE, 0.55f),    // 触摸按钮对象创建
+    belly_touch_button_(TOUCH_CHANNEL_BELLY, 0.55f) { // 触摸按钮对象创建
         
         // InitializeADC();
         InitializeCodecI2c();
         // InitializeSsd1306Display();
-        // InitializeTouchSensor();  // 触摸传感器初始化（已屏蔽）
+        InitializeTouchSensor();  // 触摸传感器初始化（已屏蔽）
         InitializeButtons();      // 按钮事件初始化
         // InitializePowerSaveTimer();
         // InitializeEarController(); // 初始化耳朵控制器

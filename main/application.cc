@@ -564,9 +564,6 @@ void Application::Start() {
     
     // Print heap stats
     SystemInfo::PrintHeapStats(); 
-    
-    // 风扇控制器已在board层级初始化
-    ESP_LOGI(TAG, "Fan controller initialized in board");
 }
 
 void Application::OnClockTimer() {

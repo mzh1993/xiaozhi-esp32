@@ -431,21 +431,14 @@ private:
             LEFT_EAR_INA_GPIO, LEFT_EAR_INB_GPIO,
             RIGHT_EAR_INA_GPIO, RIGHT_EAR_INB_GPIO
         );
-        
         if (!ear_controller_) {
             ESP_LOGE(TAG, "Failed to create Tc118sEarController instance");
             return;
         }
-        
-        ESP_LOGI(TAG, "Tc118sEarController instance created successfully");
-        
+                
         // 初始化耳朵控制器
-        ESP_LOGI(TAG, "Calling ear_controller_->Initialize()");
         esp_err_t ret = ear_controller_->Initialize();
-        ESP_LOGI(TAG, "ear_controller_->Initialize() returned: %s", (ret == ESP_OK) ? "ESP_OK" : "ESP_FAIL");
-        
         if (ret != ESP_OK) {
-            ESP_LOGE(TAG, "Failed to initialize ear controller, switching to NoEarController");
             delete ear_controller_;
             
             ESP_LOGI(TAG, "Creating NoEarController instance as fallback");
@@ -455,16 +448,31 @@ private:
                 ESP_LOGE(TAG, "Failed to create NoEarController instance");
                 return;
             }
-            
-            ESP_LOGI(TAG, "Calling NoEarController::Initialize()");
             ear_controller_->Initialize();
             ESP_LOGI(TAG, "NoEarController initialization completed");
+        } else {
+            // 成功初始化耳朵控制器后，再打开电机电源
+            #ifdef EAR_MOTO_EN_GPIO
+            if (EAR_MOTO_EN_GPIO != GPIO_NUM_NC) {
+                gpio_config_t io_conf = {};
+                io_conf.intr_type = GPIO_INTR_DISABLE;
+                io_conf.mode = GPIO_MODE_OUTPUT;
+                io_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
+                io_conf.pull_up_en = GPIO_PULLUP_DISABLE;
+                io_conf.pin_bit_mask = (1ULL << EAR_MOTO_EN_GPIO);
+                if (gpio_config(&io_conf) == ESP_OK) {
+                    gpio_set_level(EAR_MOTO_EN_GPIO, 1);
+                    // 延时等待10ms，确保电机电源稳定
+                    // vTaskDelay(pdMS_TO_TICKS(150));
+                    ESP_LOGI(TAG, "Ear motor power enabled on GPIO %d", EAR_MOTO_EN_GPIO);
+                } else {
+                    ESP_LOGE(TAG, "Failed to config ear motor power GPIO %d", EAR_MOTO_EN_GPIO);
+                }
+            }
+            #endif
         }
         
         ESP_LOGI(TAG, "=== Ear controller initialization completed successfully ===");
-        // Note: Cannot use dynamic_cast due to -fno-rtti, but we can track the type during creation
-        ESP_LOGI(TAG, "Final ear controller type: %s", 
-                 (ear_controller_ != nullptr) ? "Valid controller" : "No controller");
     }
 
     void DelayedEarReset() {
@@ -564,7 +572,7 @@ private:
         // 新增玩具触摸按键事件处理 - 使用新的情绪+文本绑定系统
         head_touch_button_.OnClick([this]() {
             ESP_LOGI(TAG, "Head touch button clicked - Channel: %d", TOUCH_CHANNEL_HEAD);
-            std::string touch_text = GetTouchResponseText("head", false);
+            // std::string touch_text = GetTouchResponseText("head", false);
             std::string action_text = "摸摸头哦~";
             // std::string action_text = "抚摸头部：" + touch_text;
             
@@ -579,7 +587,7 @@ private:
         
         head_touch_button_.OnLongPress([this]() {
             ESP_LOGI(TAG, "Head touch button long pressed - Channel: %d", TOUCH_CHANNEL_HEAD);
-            std::string touch_text = GetTouchResponseText("head", true);
+            // std::string touch_text = GetTouchResponseText("head", true);
             std::string action_text = "长时间抚摸头哦~";
             // std::string action_text = "长时间抚摸头部：" + touch_text;
             
@@ -594,7 +602,7 @@ private:
         
         nose_touch_button_.OnClick([this]() {
             ESP_LOGI(TAG, "Nose touch button clicked - Channel: %d", TOUCH_CHANNEL_NOSE);
-            std::string touch_text = GetTouchResponseText("nose", false);
+            // std::string touch_text = GetTouchResponseText("nose", false);
             std::string action_text = "抚摸鼻子哦~";
             // std::string action_text = "抚摸鼻子：" + touch_text;
             
@@ -609,7 +617,7 @@ private:
         
         nose_touch_button_.OnLongPress([this]() {
             ESP_LOGI(TAG, "Nose touch button long pressed - Channel: %d", TOUCH_CHANNEL_NOSE);
-            std::string touch_text = GetTouchResponseText("nose", true);
+            // std::string touch_text = GetTouchResponseText("nose", true);
             std::string action_text = "长时间抚摸鼻子哦~";
             // std::string action_text = "长时间抚摸鼻子：" + touch_text;
             
@@ -624,7 +632,7 @@ private:
         
         belly_touch_button_.OnClick([this]() {
             ESP_LOGI(TAG, "Belly touch button clicked - Channel: %d", TOUCH_CHANNEL_BELLY);
-            std::string touch_text = GetTouchResponseText("belly", false);
+            // std::string touch_text = GetTouchResponseText("belly", false);
             std::string action_text = "抚摸肚子哦~";
             // std::string action_text = "抚摸肚子：" + touch_text;
             
@@ -639,7 +647,7 @@ private:
         
         belly_touch_button_.OnLongPress([this]() {
             ESP_LOGI(TAG, "Belly touch button long pressed - Channel: %d", TOUCH_CHANNEL_BELLY);
-            std::string touch_text = GetTouchResponseText("belly", true);
+            // std::string touch_text = GetTouchResponseText("belly", true);
             std::string action_text = "一直抚摸你肚子";
             // std::string action_text = "长时间抚摸肚子：" + touch_text;
             
@@ -708,7 +716,7 @@ public:
         InitializeTouchSensor();  // 触摸传感器初始化（已屏蔽）
         InitializeButtons();      // 按钮事件初始化
         // InitializePowerSaveTimer();
-        // InitializeEarController(); // 初始化耳朵控制器
+        InitializeEarController(); // 初始化耳朵控制器
         // InitializeMemoryMonitor();  // 初始化内存监控  
         // InitializeTools();
         

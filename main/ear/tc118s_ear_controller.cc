@@ -6,112 +6,117 @@
 
 static const char *TAG = "TC118S_EAR_CONTROLLER";
 
+// Ensure FreeRTOS timers never get a 0-tick period when ms < tick resolution
+#ifndef MS_TO_TICKS_MIN1
+#define MS_TO_TICKS_MIN1(ms) ({ TickType_t __t = pdMS_TO_TICKS(ms); (__t == 0 ? (TickType_t)1 : __t); })
+#endif
+
 // 重新设计的情绪序列 - 基于时间控制，创造不同的运动节奏和表达效果
 const ear_sequence_step_t Tc118sEarController::happy_sequence_[] = {
     // 开心：快速节奏，短时间动作，表达活泼
-    {EAR_COMBO_BOTH_FORWARD,  130,  150},  // 快速竖起130ms，停顿150ms
-    {EAR_COMBO_BOTH_BACKWARD, 130,  150},  // 快速下垂130ms，停顿150ms
-    {EAR_COMBO_BOTH_FORWARD,  130,  150},  // 再次快速竖起
-    {EAR_COMBO_BOTH_FORWARD,  90,  0}      // 最后调整到居中状态（竖起90ms）
+    {EAR_COMBO_BOTH_FORWARD,  EAR_MOVE_QUICK_MS,  EAR_PAUSE_MEDIUM_MS},
+    {EAR_COMBO_BOTH_BACKWARD, EAR_MOVE_QUICK_MS,  EAR_PAUSE_MEDIUM_MS},
+    {EAR_COMBO_BOTH_FORWARD,  EAR_MOVE_QUICK_MS,  EAR_PAUSE_MEDIUM_MS},
+    {EAR_COMBO_BOTH_FORWARD,  EAR_MOVE_ADJUST_MS, EAR_PAUSE_NONE_MS}
 };
 
 const ear_sequence_step_t Tc118sEarController::curious_sequence_[] = {
     // 好奇：左右耳交替，中等节奏，模拟"倾听"动作
-    {EAR_COMBO_LEFT_FORWARD_RIGHT_HOLD,  150, 200},  // 左耳竖起150ms，停顿200ms
-    {EAR_COMBO_LEFT_HOLD_RIGHT_FORWARD,  150, 200},  // 右耳竖起150ms，停顿200ms
-    {EAR_COMBO_BOTH_FORWARD, 130,  150}, // 双耳同时竖起130ms，停顿150ms
-    {EAR_COMBO_BOTH_FORWARD, 90,  0}      // 最后调整到居中状态（竖起90ms）
+    {EAR_COMBO_LEFT_FORWARD_RIGHT_HOLD,  EAR_MOVE_MEDIUM_MS, EAR_PAUSE_LONG_MS},
+    {EAR_COMBO_LEFT_HOLD_RIGHT_FORWARD,  EAR_MOVE_MEDIUM_MS, EAR_PAUSE_LONG_MS},
+    {EAR_COMBO_BOTH_FORWARD,             EAR_MOVE_QUICK_MS,  EAR_PAUSE_MEDIUM_MS},
+    {EAR_COMBO_BOTH_FORWARD,             EAR_MOVE_ADJUST_MS, EAR_PAUSE_NONE_MS}
 };
 
 const ear_sequence_step_t Tc118sEarController::excited_sequence_[] = {
     // 兴奋：超快速节奏，短时间动作，表达激动
-    {EAR_COMBO_BOTH_FORWARD,  110,  100},  // 超快速竖起110ms，短停顿100ms
-    {EAR_COMBO_BOTH_BACKWARD, 110,  100},  // 超快速下垂110ms，短停顿100ms
-    {EAR_COMBO_BOTH_FORWARD,  110,  100},  // 再次超快速竖起
-    {EAR_COMBO_BOTH_BACKWARD, 110,  100},  // 再次超快速下垂
-    {EAR_COMBO_BOTH_FORWARD,  110,  100},  // 第三次超快速竖起
-    {EAR_COMBO_BOTH_FORWARD,  80,  0}      // 最后调整到居中状态（竖起80ms）
+    {EAR_COMBO_BOTH_FORWARD,  EAR_MOVE_FAST_MS,  EAR_PAUSE_SHORT_MS},
+    {EAR_COMBO_BOTH_BACKWARD, EAR_MOVE_FAST_MS,  EAR_PAUSE_SHORT_MS},
+    {EAR_COMBO_BOTH_FORWARD,  EAR_MOVE_FAST_MS,  EAR_PAUSE_SHORT_MS},
+    {EAR_COMBO_BOTH_BACKWARD, EAR_MOVE_FAST_MS,  EAR_PAUSE_SHORT_MS},
+    {EAR_COMBO_BOTH_FORWARD,  EAR_MOVE_FAST_MS,  EAR_PAUSE_SHORT_MS},
+    {EAR_COMBO_BOTH_FORWARD,  EAR_MOVE_SHORT_MS, EAR_PAUSE_NONE_MS}
 };
 
 const ear_sequence_step_t Tc118sEarController::playful_sequence_[] = {
     // 顽皮：节奏变化，长短时间交替，表达调皮
-    {EAR_COMBO_BOTH_FORWARD,  170, 200},  // 慢速竖起170ms，停顿200ms
-    {EAR_COMBO_BOTH_BACKWARD, 110,  100}, // 快速下垂110ms，短停顿100ms
-    {EAR_COMBO_BOTH_FORWARD,  130,  150}, // 中速竖起130ms，停顿150ms
-    {EAR_COMBO_BOTH_BACKWARD, 150, 150},  // 中速下垂150ms，停顿150ms
-    {EAR_COMBO_BOTH_FORWARD,  110,  100}, // 快速竖起110ms，短停顿100ms
-    {EAR_COMBO_BOTH_FORWARD,  90,  0}     // 最后调整到居中状态（竖起90ms）
+    {EAR_COMBO_BOTH_FORWARD,  EAR_MOVE_MEDIUM_MS, EAR_PAUSE_LONG_MS},
+    {EAR_COMBO_BOTH_BACKWARD, EAR_MOVE_FAST_MS,   EAR_PAUSE_SHORT_MS},
+    {EAR_COMBO_BOTH_FORWARD,  EAR_MOVE_QUICK_MS,  EAR_PAUSE_MEDIUM_MS},
+    {EAR_COMBO_BOTH_BACKWARD, EAR_MOVE_MEDIUM_MS, EAR_PAUSE_MEDIUM_MS},
+    {EAR_COMBO_BOTH_FORWARD,  EAR_MOVE_FAST_MS,   EAR_PAUSE_SHORT_MS},
+    {EAR_COMBO_BOTH_FORWARD,  EAR_MOVE_ADJUST_MS, EAR_PAUSE_NONE_MS}
 };
 
 const ear_sequence_step_t Tc118sEarController::sad_sequence_[] = {
     // 悲伤：慢速节奏，长时间动作，表达沉重
-    {EAR_COMBO_BOTH_BACKWARD, 250, 500},  // 缓慢下垂250ms，长停顿500ms
-    {EAR_COMBO_BOTH_FORWARD,  70, 100},   // 缓慢恢复70ms，停顿100ms
-    {EAR_COMBO_BOTH_BACKWARD, 230, 300},  // 再次缓慢下垂230ms，停顿300ms
-    {EAR_COMBO_BOTH_FORWARD,  70, 100},   // 缓慢恢复70ms，停顿100ms
-    {EAR_COMBO_BOTH_BACKWARD, 230, 200},  // 再次缓慢下垂230ms，停顿200ms
-    {EAR_COMBO_BOTH_FORWARD,  80,  0}     // 最后调整到居中状态（竖起80ms）
+    {EAR_COMBO_BOTH_BACKWARD, EAR_MOVE_SLOW_PLUS_MS,  EAR_PAUSE_XXLONG_MS},
+    {EAR_COMBO_BOTH_FORWARD,  EAR_MOVE_TINY_MS,       EAR_PAUSE_SHORT_MS},
+    {EAR_COMBO_BOTH_BACKWARD, EAR_MOVE_SLOW_PLUS_MS,  EAR_PAUSE_LONG_MS},
+    {EAR_COMBO_BOTH_FORWARD,  EAR_MOVE_TINY_MS,       EAR_PAUSE_SHORT_MS},
+    {EAR_COMBO_BOTH_BACKWARD, EAR_MOVE_SLOW_PLUS_MS,  EAR_PAUSE_MEDIUM_MS},
+    {EAR_COMBO_BOTH_FORWARD,  EAR_MOVE_SHORT_MS,      EAR_PAUSE_NONE_MS}
 };
 
 const ear_sequence_step_t Tc118sEarController::surprised_sequence_[] = {
     // 惊讶：快速竖起，然后缓慢下垂，表达"震惊"到"恢复"
-    {EAR_COMBO_BOTH_FORWARD,  110,  200},  // 超快速竖起110ms，停顿200ms
-    {EAR_COMBO_BOTH_BACKWARD, 230, 100},   // 缓慢下垂230ms，停顿100ms
-    {EAR_COMBO_BOTH_FORWARD,  150,  150},  // 中速竖起150ms，停顿150ms
-    {EAR_COMBO_BOTH_FORWARD,  90,  0}      // 最后调整到居中状态（竖起90ms）
+    {EAR_COMBO_BOTH_FORWARD,  EAR_MOVE_FAST_MS,   EAR_PAUSE_LONG_MS},
+    {EAR_COMBO_BOTH_BACKWARD, EAR_MOVE_SLOW_PLUS_MS, EAR_PAUSE_SHORT_MS},
+    {EAR_COMBO_BOTH_FORWARD,  EAR_MOVE_MEDIUM_MS, EAR_PAUSE_MEDIUM_MS},
+    {EAR_COMBO_BOTH_FORWARD,  EAR_MOVE_ADJUST_MS, EAR_PAUSE_NONE_MS}
 };
 
 const ear_sequence_step_t Tc118sEarController::sleepy_sequence_[] = {
     // 困倦：超慢速节奏，长时间动作，表达疲惫
-    {EAR_COMBO_BOTH_BACKWARD, 300, 500},  // 超缓慢下垂300ms，长停顿500ms
-    {EAR_COMBO_BOTH_FORWARD,  100,  300}, // 轻微抬起100ms，停顿300ms
-    {EAR_COMBO_BOTH_BACKWARD, 250, 400},  // 再次超缓慢下垂250ms，停顿400ms
-    {EAR_COMBO_BOTH_FORWARD,  90,  0}     // 最后调整到居中状态（竖起90ms）
+    {EAR_COMBO_BOTH_BACKWARD, EAR_MOVE_LONG_MS,   EAR_PAUSE_XXLONG_MS},
+    {EAR_COMBO_BOTH_FORWARD,  EAR_MOVE_SHORT_MS,  EAR_PAUSE_LONG_MS},
+    {EAR_COMBO_BOTH_BACKWARD, EAR_MOVE_SLOW_PLUS_MS, EAR_PAUSE_XLONG_MS},
+    {EAR_COMBO_BOTH_FORWARD,  EAR_MOVE_ADJUST_MS, EAR_PAUSE_NONE_MS}
 };
 
 const ear_sequence_step_t Tc118sEarController::confident_sequence_[] = {
     // 自信：稳定节奏，中等时间动作，表达坚定
-    {EAR_COMBO_BOTH_FORWARD,  150, 250},  // 稳定竖起150ms，停顿250ms
-    {EAR_COMBO_BOTH_BACKWARD, 150, 250},  // 稳定下垂150ms，停顿250ms
-    {EAR_COMBO_BOTH_FORWARD,  150, 250},  // 再次稳定竖起
-    {EAR_COMBO_BOTH_FORWARD,  100,  0}    // 最后调整到居中状态（竖起100ms）
+    {EAR_COMBO_BOTH_FORWARD,  EAR_MOVE_MEDIUM_MS, EAR_PAUSE_LONG_MS},
+    {EAR_COMBO_BOTH_BACKWARD, EAR_MOVE_MEDIUM_MS, EAR_PAUSE_LONG_MS},
+    {EAR_COMBO_BOTH_FORWARD,  EAR_MOVE_MEDIUM_MS, EAR_PAUSE_LONG_MS},
+    {EAR_COMBO_BOTH_FORWARD,  EAR_MOVE_SHORT_MS,  EAR_PAUSE_NONE_MS}
 };
 
 const ear_sequence_step_t Tc118sEarController::confused_sequence_[] = {
     // 困惑：不规则节奏，时间变化，表达混乱
-    {EAR_COMBO_LEFT_FORWARD_RIGHT_BACKWARD, 170, 200},  // 左耳竖起，右耳下垂170ms，停顿200ms
-    {EAR_COMBO_LEFT_FORWARD_RIGHT_BACKWARD, 150, 150},  // 左耳竖起，右耳下垂150ms，停顿150ms
-    {EAR_COMBO_BOTH_FORWARD,  130,  100},  // 双耳竖起130ms，短停顿100ms
-    {EAR_COMBO_BOTH_BACKWARD, 150, 150},   // 双耳下垂150ms，停顿150ms
-    {EAR_COMBO_BOTH_FORWARD,  90,  0}      // 最后调整到居中状态（双耳竖起90ms）
+    {EAR_COMBO_LEFT_FORWARD_RIGHT_BACKWARD, EAR_MOVE_MEDIUM_MS, EAR_PAUSE_LONG_MS},
+    {EAR_COMBO_LEFT_FORWARD_RIGHT_BACKWARD, EAR_MOVE_MEDIUM_MS, EAR_PAUSE_MEDIUM_MS},
+    {EAR_COMBO_BOTH_FORWARD,               EAR_MOVE_QUICK_MS,  EAR_PAUSE_SHORT_MS},
+    {EAR_COMBO_BOTH_BACKWARD,              EAR_MOVE_MEDIUM_MS, EAR_PAUSE_MEDIUM_MS},
+    {EAR_COMBO_BOTH_FORWARD,               EAR_MOVE_ADJUST_MS, EAR_PAUSE_NONE_MS}
 };
 
 const ear_sequence_step_t Tc118sEarController::loving_sequence_[] = {
     // 爱意：温柔节奏，中等时间动作，表达温柔
-    {EAR_COMBO_BOTH_FORWARD,  170, 300},  // 温柔竖起170ms，长停顿300ms
-    {EAR_COMBO_BOTH_BACKWARD, 150, 200},  // 温柔下垂150ms，停顿200ms
-    {EAR_COMBO_BOTH_FORWARD,  160, 250},  // 再次温柔竖起160ms，停顿250ms
-    {EAR_COMBO_BOTH_FORWARD,  100,  0}    // 最后调整到居中状态（竖起100ms）
+    {EAR_COMBO_BOTH_FORWARD,  EAR_MOVE_MEDIUM_MS, EAR_PAUSE_LONG_MS},
+    {EAR_COMBO_BOTH_BACKWARD, EAR_MOVE_MEDIUM_MS, EAR_PAUSE_LONG_MS},
+    {EAR_COMBO_BOTH_FORWARD,  EAR_MOVE_MEDIUM_MS, EAR_PAUSE_LONG_MS},
+    {EAR_COMBO_BOTH_FORWARD,  EAR_MOVE_SHORT_MS,  EAR_PAUSE_NONE_MS}
 };
 
 const ear_sequence_step_t Tc118sEarController::angry_sequence_[] = {
     // 愤怒：快速节奏，短时间动作，表达激烈
-    {EAR_COMBO_BOTH_FORWARD,  120,  80},   // 快速竖起120ms，短停顿80ms
-    {EAR_COMBO_BOTH_BACKWARD, 120,  80},   // 快速下垂120ms，短停顿80ms
-    {EAR_COMBO_BOTH_FORWARD,  120,  80},   // 再次快速竖起
-    {EAR_COMBO_BOTH_BACKWARD, 120,  80},   // 再次快速下垂
-    {EAR_COMBO_BOTH_FORWARD,  120,  80},   // 再次快速竖起
-    {EAR_COMBO_BOTH_BACKWARD, 120,  80},   // 再次快速下垂
-    {EAR_COMBO_BOTH_FORWARD,  120,  80},   // 第三次快速竖起
-    {EAR_COMBO_BOTH_FORWARD,  85,  0}      // 最后调整到居中状态（竖起85ms）
+    {EAR_COMBO_BOTH_FORWARD,  EAR_MOVE_FAST_MS,  EAR_PAUSE_SHORT_MS},
+    {EAR_COMBO_BOTH_BACKWARD, EAR_MOVE_FAST_MS,  EAR_PAUSE_SHORT_MS},
+    {EAR_COMBO_BOTH_FORWARD,  EAR_MOVE_FAST_MS,  EAR_PAUSE_SHORT_MS},
+    {EAR_COMBO_BOTH_BACKWARD, EAR_MOVE_FAST_MS,  EAR_PAUSE_SHORT_MS},
+    {EAR_COMBO_BOTH_FORWARD,  EAR_MOVE_FAST_MS,  EAR_PAUSE_SHORT_MS},
+    {EAR_COMBO_BOTH_BACKWARD, EAR_MOVE_FAST_MS,  EAR_PAUSE_SHORT_MS},
+    {EAR_COMBO_BOTH_FORWARD,  EAR_MOVE_FAST_MS,  EAR_PAUSE_SHORT_MS},
+    {EAR_COMBO_BOTH_FORWARD,  EAR_MOVE_ADJUST_MS, EAR_PAUSE_NONE_MS}
 };
 
 const ear_sequence_step_t Tc118sEarController::cool_sequence_[] = {
     // 酷：慢速节奏，长时间动作，表达冷静
-    {EAR_COMBO_BOTH_FORWARD,  200, 400},  // 缓慢竖起200ms，长停顿400ms
-    {EAR_COMBO_BOTH_BACKWARD, 200, 400},  // 缓慢下垂200ms，长停顿400ms
-    {EAR_COMBO_BOTH_FORWARD,  200, 400},  // 再次缓慢竖起
-    {EAR_COMBO_BOTH_FORWARD,  125,  0}    // 最后调整到居中状态（竖起125ms）
+    {EAR_COMBO_BOTH_FORWARD,  EAR_MOVE_SLOW_MS,  EAR_PAUSE_XLONG_MS},
+    {EAR_COMBO_BOTH_BACKWARD, EAR_MOVE_SLOW_MS,  EAR_PAUSE_XLONG_MS},
+    {EAR_COMBO_BOTH_FORWARD,  EAR_MOVE_SLOW_MS,  EAR_PAUSE_XLONG_MS},
+    {EAR_COMBO_BOTH_FORWARD,  EAR_MOVE_QUICK_MS, EAR_PAUSE_NONE_MS}
 };
 
 // 默认情绪映射 - 基于时间控制的情绪表达
@@ -410,7 +415,7 @@ esp_err_t Tc118sEarController::MoveBoth(ear_combo_param_t combo) {
         // 启动定时器来在指定时间后停止耳朵
         if (stop_timer_) {
             xTimerStop(stop_timer_, 0);
-            xTimerChangePeriod(stop_timer_, pdMS_TO_TICKS(combo.duration_ms), 0);
+            xTimerChangePeriod(stop_timer_, MS_TO_TICKS_MIN1(combo.duration_ms), 0);
             xTimerStart(stop_timer_, 0);
         } else {
             // 如果没有定时器，直接停止（避免阻塞）
@@ -663,7 +668,7 @@ void Tc118sEarController::OnSequenceTimer(TimerHandle_t timer) {
         if (next_delay == 0) {
             next_delay = SCENARIO_DEFAULT_DELAY_MS;
         }
-        xTimerChangePeriod(sequence_timer_, pdMS_TO_TICKS(next_delay), 0);
+        xTimerChangePeriod(sequence_timer_, MS_TO_TICKS_MIN1(next_delay), 0);
     }
 }
 
@@ -804,7 +809,7 @@ void Tc118sEarController::TestEarCombinations() {
     
     // 直接使用MoveBoth，避免复杂的组合逻辑
     ESP_LOGI(TAG, "Both ears forward");
-    ear_combo_param_t combo = {EAR_COMBO_BOTH_FORWARD, 500};
+    ear_combo_param_t combo = {EAR_COMBO_BOTH_FORWARD, EAR_MOVE_LONG_MS};
     MoveBoth(combo);
     vTaskDelay(pdMS_TO_TICKS(1000));
     

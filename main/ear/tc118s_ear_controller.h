@@ -6,16 +6,40 @@
 
 // ===== 电机延时参数配置 - 基于实际测试优化 =====
 // 耳朵位置控制延时参数（单位：毫秒）
-#define EAR_POSITION_DOWN_TIME_MS      100     // 耳朵从竖起到下垂所需时间
-#define EAR_POSITION_UP_TIME_MS        100     // 耳朵从下垂到竖起所需时间
-#define EAR_POSITION_MIDDLE_TIME_MS    40      // 耳朵从竖起最高点回到中间位置所需时间
+#define EAR_POSITION_DOWN_TIME_MS      50     // 耳朵从竖起到下垂所需时间
+#define EAR_POSITION_UP_TIME_MS        50     // 耳朵从下垂到竖起所需时间
+#define EAR_POSITION_MIDDLE_TIME_MS    20      // 耳朵从竖起最高点回到中间位置所需时间
 
 // 场景动作延时参数
-#define SCENARIO_DEFAULT_DELAY_MS      200     // 场景步骤间默认延时（增加）
-#define SCENARIO_LOOP_DELAY_MS         500     // 场景循环间延时（增加）
+#define SCENARIO_DEFAULT_DELAY_MS      100     // 场景步骤间默认延时（增加）
+#define SCENARIO_LOOP_DELAY_MS         250     // 场景循环间延时（增加）
 #define EMOTION_COOLDOWN_MS            3000    // 情绪触发冷却时间
 
 // ===== 宏定义结束 =====
+
+// ===== 统一的动作/停顿时间预设（毫秒）便于全局调优（聚合版） =====
+// 动作时长（建议优先使用这几档）
+#define EAR_MOVE_TINY_MS            35
+#define EAR_MOVE_ADJUST_MS          45
+#define EAR_MOVE_SHORT_MS           150
+#define EAR_MOVE_FAST_MS            55
+#define EAR_MOVE_QUICK_MS           65
+#define EAR_MOVE_MEDIUM_MS          75
+#define EAR_MOVE_SLOW_MS            100
+#define EAR_MOVE_SLOW_PLUS_MS       115
+#define EAR_MOVE_LONG_MS            150
+
+// 停顿时长（建议优先使用这几档）
+#define EAR_PAUSE_NONE_MS           0
+#define EAR_PAUSE_SHORT_MS          100
+#define EAR_PAUSE_MEDIUM_MS         150
+#define EAR_PAUSE_LONG_MS           200
+#define EAR_PAUSE_XLONG_MS          300
+#define EAR_PAUSE_XXLONG_MS         500
+
+// // 软启动/错峰控制（供上层引用）
+// #define EAR_POWER_ON_STABILIZE_MS   150
+// #define EAR_START_STAGGER_MS        60
 
 class Tc118sEarController : public EarController {
 public:

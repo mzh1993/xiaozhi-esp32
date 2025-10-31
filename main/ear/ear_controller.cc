@@ -101,8 +101,8 @@ void EarController::OnSequenceTimer(TimerHandle_t timer) {
             StopBoth();
             ESP_LOGI(TAG, "Sequence completed");
         } else {
-            // 循环之间添加停顿
-            vTaskDelay(pdMS_TO_TICKS(100)); // 默认100ms间隔
+            // 循环之间添加停顿 - 通过定时器延迟实现，不在回调中阻塞
+            // 注意：延迟时间已包含在 step.delay_ms 中，这里只需设置定时器周期
         }
     }
     
@@ -111,6 +111,10 @@ void EarController::OnSequenceTimer(TimerHandle_t timer) {
         uint32_t next_delay = step.delay_ms;
         if (next_delay == 0) {
             next_delay = 100; // 默认100ms间隔
+        }
+        // 如果是循环，增加循环延迟
+        if (current_loop_count_ > 0 && current_step_index_ == 0) {
+            next_delay += 100; // 循环之间额外100ms停顿
         }
         xTimerChangePeriod(sequence_timer_, pdMS_TO_TICKS(next_delay), 0);
     }

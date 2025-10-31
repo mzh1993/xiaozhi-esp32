@@ -256,6 +256,13 @@ esp_err_t Tc118sEarController::Initialize() {
     // 设置序列模式
     SetupSequencePatterns();
     
+    // 创建状态互斥锁
+    state_mutex_ = xSemaphoreCreateMutex();
+    if (!state_mutex_) {
+        ESP_LOGE(TAG, "Failed to create state mutex");
+        return ESP_ERR_NO_MEM;
+    }
+    
     // 创建停止定时器
     stop_timer_ = xTimerCreate("EarStopTimer", pdMS_TO_TICKS(100), pdFALSE, this, 
                                [](TimerHandle_t timer) {
@@ -264,6 +271,10 @@ esp_err_t Tc118sEarController::Initialize() {
                                });
     if (!stop_timer_) {
         ESP_LOGE(TAG, "Failed to create stop timer");
+        if (state_mutex_) {
+            vSemaphoreDelete(state_mutex_);
+            state_mutex_ = nullptr;
+        }
         return ESP_ERR_NO_MEM;
     }
     
@@ -292,10 +303,17 @@ esp_err_t Tc118sEarController::Deinitialize() {
     // 停止所有耳朵
     StopBoth();
     
-    // 删除停止定时器
+    // 删除停止定时器 - 先停止再删除，等待完成
     if (stop_timer_) {
-        xTimerDelete(stop_timer_, 0);
+        xTimerStop(stop_timer_, portMAX_DELAY);
+        xTimerDelete(stop_timer_, portMAX_DELAY);
         stop_timer_ = nullptr;
+    }
+    
+    // 删除状态互斥锁
+    if (state_mutex_) {
+        vSemaphoreDelete(state_mutex_);
+        state_mutex_ = nullptr;
     }
     
     // 调用基类反初始化
@@ -337,8 +355,13 @@ esp_err_t Tc118sEarController::MoveEar(bool left_ear, ear_action_param_t action)
         return ESP_ERR_INVALID_STATE;
     }
     
-    ESP_LOGI(TAG, "Moving %s ear: action=%d, duration=%lu ms", 
-             left_ear ? "left" : "right", action.action, action.duration_ms);
+    if (action.action == EAR_ACTION_STOP) {
+        ESP_LOGD(TAG, "Moving %s ear: action=%d, duration=%lu ms", 
+                 left_ear ? "left" : "right", action.action, action.duration_ms);
+    } else {
+        ESP_LOGI(TAG, "Moving %s ear: action=%d, duration=%lu ms", 
+                 left_ear ? "left" : "right", action.action, action.duration_ms);
+    }
     
     // 设置GPIO状态
     SetGpioLevels(left_ear, action.action);
@@ -359,6 +382,13 @@ esp_err_t Tc118sEarController::StopEar(bool left_ear) {
 }
 
 esp_err_t Tc118sEarController::StopBoth() {
+    if (state_mutex_) {
+        xSemaphoreTake(state_mutex_, portMAX_DELAY);
+        moving_both_ = false;
+        xSemaphoreGive(state_mutex_);
+    } else {
+        moving_both_ = false;
+    }
     StopEar(true);
     StopEar(false);
     return ESP_OK;
@@ -370,8 +400,54 @@ esp_err_t Tc118sEarController::MoveBoth(ear_combo_param_t combo) {
         return ESP_ERR_INVALID_STATE;
     }
     
+    uint32_t duration_ms = combo.duration_ms;
+    if (duration_ms < EAR_BOTH_MIN_DURATION_MS && duration_ms > 0) {
+        duration_ms = EAR_BOTH_MIN_DURATION_MS;
+    }
+
+    uint64_t now_ms = esp_timer_get_time() / 1000;
+    
+    // 保护状态变量访问
+    bool is_moving = false;
+    if (state_mutex_) {
+        xSemaphoreTake(state_mutex_, portMAX_DELAY);
+        is_moving = moving_both_;
+        xSemaphoreGive(state_mutex_);
+    } else {
+        is_moving = moving_both_;
+    }
+    
+    if (is_moving) {
+        ESP_LOGD(TAG, "MoveBoth re-entry: refresh timer only, duration=%lu ms", duration_ms);
+        if (stop_timer_) {
+            xTimerStop(stop_timer_, 0);
+            xTimerChangePeriod(stop_timer_, MS_TO_TICKS_MIN1(duration_ms), 0);
+            xTimerStart(stop_timer_, 0);
+        }
+        return ESP_OK;
+    }
+
+    if ((now_ms - last_move_tick_ms_) < EAR_MOVE_COOLDOWN_MS) {
+        ESP_LOGD(TAG, "MoveBoth cooldown: refresh timer only, duration=%lu ms", duration_ms);
+        if (stop_timer_) {
+            xTimerStop(stop_timer_, 0);
+            xTimerChangePeriod(stop_timer_, MS_TO_TICKS_MIN1(duration_ms), 0);
+            xTimerStart(stop_timer_, 0);
+        }
+        return ESP_OK;
+    }
+
+    last_move_tick_ms_ = now_ms;
+    if (state_mutex_) {
+        xSemaphoreTake(state_mutex_, portMAX_DELAY);
+        moving_both_ = true;
+        xSemaphoreGive(state_mutex_);
+    } else {
+        moving_both_ = true;
+    }
+
     ESP_LOGI(TAG, "Moving both ears: combo=%d, duration=%lu ms", 
-             combo.combo_action, combo.duration_ms);
+             combo.combo_action, duration_ms);
     
     // 根据组合动作类型设置双耳GPIO状态（对双耳同时动作引入错峰启动）
     switch (combo.combo_action) {
@@ -407,11 +483,11 @@ esp_err_t Tc118sEarController::MoveBoth(ear_combo_param_t combo) {
     }
     
     // 运行指定时间 - 非阻塞实现
-    if (combo.duration_ms > 0) {
+    if (duration_ms > 0) {
         // 启动定时器来在指定时间后停止耳朵
         if (stop_timer_) {
             xTimerStop(stop_timer_, 0);
-            xTimerChangePeriod(stop_timer_, MS_TO_TICKS_MIN1(combo.duration_ms), 0);
+            xTimerChangePeriod(stop_timer_, MS_TO_TICKS_MIN1(duration_ms), 0);
             xTimerStart(stop_timer_, 0);
         } else {
             // 如果没有定时器，直接停止（避免阻塞）
@@ -653,8 +729,8 @@ void Tc118sEarController::OnSequenceTimer(TimerHandle_t timer) {
                 xTimerStop(sequence_timer_, 0);
             }
             
-            // 简单设置最终位置
-            SetEarFinalPosition();
+            // 使用延迟队列委托位置设置，避免阻塞定时器回调
+            ScheduleEarFinalPosition();
         }
     }
     
@@ -664,7 +740,12 @@ void Tc118sEarController::OnSequenceTimer(TimerHandle_t timer) {
         if (next_delay == 0) {
             next_delay = SCENARIO_DEFAULT_DELAY_MS;
         }
-        xTimerChangePeriod(sequence_timer_, MS_TO_TICKS_MIN1(next_delay), 0);
+        // 确保定时器周期 >= 动作持续时间 + 暂停时间，避免动作重叠
+        uint32_t total_time = step.duration_ms + next_delay;
+        if (total_time < SCENARIO_DEFAULT_DELAY_MS) {
+            total_time = SCENARIO_DEFAULT_DELAY_MS;
+        }
+        xTimerChangePeriod(sequence_timer_, MS_TO_TICKS_MIN1(total_time), 0);
     }
 }
 
@@ -677,17 +758,30 @@ bool Tc118sEarController::ShouldTriggerEmotion(const char* emotion) {
     // 获取当前时间
     uint64_t current_time = esp_timer_get_time() / 1000;
     
+    // 使用互斥锁保护状态检查，避免竞态条件
+    bool is_sequence_active = false;
+    bool is_emotion_active = false;
+    if (state_mutex_) {
+        xSemaphoreTake(state_mutex_, portMAX_DELAY);
+        is_sequence_active = sequence_active_;
+        is_emotion_active = emotion_action_active_;
+        xSemaphoreGive(state_mutex_);
+    } else {
+        is_sequence_active = sequence_active_;
+        is_emotion_active = emotion_action_active_;
+    }
+    
     ESP_LOGI(TAG, "ShouldTriggerEmotion: checking %s, current_emotion=%s, emotion_action_active=%s, sequence_active=%s", 
-             emotion, current_emotion_.c_str(), emotion_action_active_ ? "true" : "false", sequence_active_ ? "true" : "false");
+             emotion, current_emotion_.c_str(), is_emotion_active ? "true" : "false", is_sequence_active ? "true" : "false");
     
     // 如果当前有序列正在进行，不触发新的情绪
-    if (sequence_active_) {
+    if (is_sequence_active) {
         ESP_LOGI(TAG, "Sequence already active, skipping trigger for %s", emotion);
         return false;
     }
     
     // 如果当前有情绪动作正在进行，不触发新的情绪
-    if (emotion_action_active_) {
+    if (is_emotion_active) {
         ESP_LOGI(TAG, "Emotion action already active, skipping trigger for %s", emotion);
         return false;
     }
@@ -721,6 +815,26 @@ void Tc118sEarController::SetEarFinalPosition() {
     ESP_LOGI(TAG, "Setting ears to neutral MIDDLE position");
     SetEarPosition(true, EAR_POSITION_MIDDLE);
     SetEarPosition(false, EAR_POSITION_MIDDLE);
+}
+
+void Tc118sEarController::ScheduleEarFinalPosition() {
+    // 使用延迟队列委托位置设置，避免阻塞定时器回调
+    // 延迟50ms执行，确保序列完全完成
+    BaseType_t result = xTimerPendFunctionCall(
+        [](void* self_ptr, uint32_t param) {
+            Tc118sEarController* self = static_cast<Tc118sEarController*>(self_ptr);
+            self->SetEarFinalPosition();
+        },
+        this,
+        0,
+        pdMS_TO_TICKS(50)
+    );
+    
+    if (result != pdPASS) {
+        ESP_LOGW(TAG, "Failed to schedule ear final position, executing directly");
+        // 如果调度失败，直接执行（虽然会阻塞，但总比不执行好）
+        SetEarFinalPosition();
+    }
 }
 
 void Tc118sEarController::SetEarInitialPosition() {
@@ -912,6 +1026,7 @@ void Tc118sEarController::TestEarSequences() {
 // 停止定时器回调 - 用于非阻塞的MoveBoth
 void Tc118sEarController::OnStopTimer(TimerHandle_t timer) {
     ESP_LOGI(TAG, "Stop timer triggered - stopping both ears");
+    // moving_both_ 在 StopBoth() 中设置，不需要单独设置
     StopBoth();
 }
 
@@ -927,12 +1042,14 @@ void Tc118sEarController::SoftStartSingleEar(bool left_ear, ear_action_t action)
 
 void Tc118sEarController::StartBothWithStagger(ear_combo_action_t combo_action, uint32_t duration_ms) {
     // 在独立任务中执行，避免阻塞定时器服务任务
+    struct StaggerCtx {
+        Tc118sEarController* self;
+        ear_combo_action_t action;
+        uint32_t duration_ms;
+    };
+
     auto task_fn = [](void* arg) {
-        auto* ctx = static_cast<struct {
-            Tc118sEarController* self;
-            ear_combo_action_t action;
-            uint32_t duration_ms;
-        }*>(arg);
+        auto* ctx = static_cast<StaggerCtx*>(arg);
 
         Tc118sEarController* self = ctx->self;
         ear_combo_action_t action = ctx->action;
@@ -942,13 +1059,13 @@ void Tc118sEarController::StartBothWithStagger(ear_combo_action_t combo_action, 
         if (action == EAR_COMBO_BOTH_FORWARD) {
             self->SoftStartSingleEar(true, EAR_ACTION_FORWARD);
             if (EAR_START_STAGGER_MS > 0) {
-                vTaskDelay(pdMS_TO_TICKS(EAR_START_STAGGER_MS));
+                vTaskDelay(MS_TO_TICKS_MIN1(EAR_START_STAGGER_MS));
             }
             self->SoftStartSingleEar(false, EAR_ACTION_FORWARD);
         } else if (action == EAR_COMBO_BOTH_BACKWARD) {
             self->SoftStartSingleEar(true, EAR_ACTION_BACKWARD);
             if (EAR_START_STAGGER_MS > 0) {
-                vTaskDelay(pdMS_TO_TICKS(EAR_START_STAGGER_MS));
+                vTaskDelay(MS_TO_TICKS_MIN1(EAR_START_STAGGER_MS));
             }
             self->SoftStartSingleEar(false, EAR_ACTION_BACKWARD);
         }
@@ -957,7 +1074,7 @@ void Tc118sEarController::StartBothWithStagger(ear_combo_action_t combo_action, 
         vTaskDelete(nullptr);
     };
 
-    auto* payload = (decltype(payload))pvPortMalloc(sizeof(*payload));
+    auto* payload = (StaggerCtx*)pvPortMalloc(sizeof(StaggerCtx));
     if (!payload) {
         ESP_LOGW(TAG, "StartBothWithStagger: alloc failed, fallback to simultaneous start");
         // 退化为同时启动

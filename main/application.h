@@ -86,6 +86,9 @@ private:
     int clock_ticks_ = 0;
     TaskHandle_t check_new_version_task_handle_ = nullptr;
     TaskHandle_t main_event_loop_task_handle_ = nullptr;
+    
+    // 音频通道恢复保护：跟踪最后收到 tts start 的时间
+    uint64_t last_tts_start_time_ms_ = 0;
 
     void OnWakeWordDetected();
     void OnClockTimer();

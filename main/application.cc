@@ -435,6 +435,34 @@ void Application::Start() {
     protocol_->OnAudioChannelClosed([this, &board]() {
         board.SetPowerSaveMode(true);
         Schedule([this]() {
+            // 检查是否是 speaking 状态或最近收到 tts start（5秒内）
+            // 如果是，尝试重新打开音频通道而不是直接切到 idle
+            uint64_t current_time_ms = esp_timer_get_time() / 1000;
+            bool recent_tts_start = (last_tts_start_time_ms_ > 0 && 
+                                     (current_time_ms - last_tts_start_time_ms_) < 5000);
+            
+            if (device_state_ == kDeviceStateSpeaking || recent_tts_start) {
+                ESP_LOGW(TAG, "Audio channel closed during speaking or recent tts start, attempting to reopen");
+                
+                // 尝试重新打开音频通道
+                if (protocol_ && protocol_->OpenAudioChannel()) {
+                    ESP_LOGI(TAG, "Audio channel reopened successfully after unexpected close");
+                    
+                    // 确保音频输出启用
+                    auto codec = Board::GetInstance().GetAudioCodec();
+                    if (codec) {
+                        codec->EnableOutput(true);
+                        ESP_LOGI(TAG, "Audio output re-enabled after channel reopen");
+                    }
+                    
+                    // 保持当前状态，不切换到 idle
+                    return;
+                } else {
+                    ESP_LOGW(TAG, "Failed to reopen audio channel, will switch to idle");
+                }
+            }
+            
+            // 如果不是 speaking 状态或重开失败，正常处理通道关闭
             auto display = Board::GetInstance().GetDisplay();
             display->SetChatMessage("system", "");
             SetDeviceState(kDeviceStateIdle);
@@ -448,8 +476,44 @@ void Application::Start() {
             if (strcmp(state->valuestring, "start") == 0) {
                 Schedule([this]() {
                     aborted_ = false;
-                    if (device_state_ == kDeviceStateIdle || device_state_ == kDeviceStateListening) {
+                    
+                    // 记录 tts start 时间，用于通道关闭保护
+                    last_tts_start_time_ms_ = esp_timer_get_time() / 1000;
+                    
+                    // 强制确保音频通道打开（可能在状态切换过程中被关闭）
+                    if (!protocol_ || !protocol_->IsAudioChannelOpened()) {
+                        ESP_LOGW(TAG, "Audio channel closed when tts start received, reopening...");
+                        if (!protocol_) {
+                            ESP_LOGE(TAG, "Protocol not initialized");
+                            return;
+                        }
+                        SetDeviceState(kDeviceStateConnecting);
+                        if (!protocol_->OpenAudioChannel()) {
+                            ESP_LOGE(TAG, "Failed to reopen audio channel for tts start");
+                            SetDeviceState(kDeviceStateIdle);
+                            return;
+                        }
+                        ESP_LOGI(TAG, "Audio channel reopened successfully for tts start");
+                    }
+                    
+                    // 强制确保音频输出启用
+                    auto codec = Board::GetInstance().GetAudioCodec();
+                    if (codec) {
+                        codec->EnableOutput(true);
+                        ESP_LOGI(TAG, "Audio output enabled for tts start");
+                    }
+                    
+                    // 放宽状态检查：允许在listening、idle或connecting时切换到speaking
+                    // 这样可以处理触摸事件触发的语音响应
+                    if (device_state_ == kDeviceStateIdle || 
+                        device_state_ == kDeviceStateListening ||
+                        device_state_ == kDeviceStateConnecting) {
                         SetDeviceState(kDeviceStateSpeaking);
+                    } else if (device_state_ == kDeviceStateSpeaking) {
+                        // 如果已经是speaking状态，确保音频输出启用
+                        if (codec) {
+                            codec->EnableOutput(true);
+                        }
                     }
                 });
             } else if (strcmp(state->valuestring, "stop") == 0) {
@@ -468,6 +532,20 @@ void Application::Start() {
                     ESP_LOGI(TAG, "<< %s", text->valuestring);
                     Schedule([this, display, message = std::string(text->valuestring)]() {
                         display->SetChatMessage("assistant", message.c_str());
+                        
+                        // 收到句子开始，强制确保音频输出启用（防止音频输出被意外禁用）
+                        auto codec = Board::GetInstance().GetAudioCodec();
+                        if (codec) {
+                            codec->EnableOutput(true);
+                        }
+                        
+                        // 确保音频通道仍然打开
+                        if (protocol_ && !protocol_->IsAudioChannelOpened()) {
+                            ESP_LOGW(TAG, "Audio channel closed during sentence_start, attempting to reopen");
+                            if (protocol_->OpenAudioChannel()) {
+                                ESP_LOGI(TAG, "Audio channel reopened during sentence_start");
+                            }
+                        }
                     });
                 }
             }
@@ -486,11 +564,11 @@ void Application::Start() {
                     // 更新显示
                     display->SetEmotion(emotion_str.c_str());
                     
-                    // // 触发耳朵动作（让耳朵控制器自己处理重复检查）
-                    // auto ear_controller = Board::GetInstance().GetEarController();
-                    // if (ear_controller) {
-                    //     ear_controller->TriggerEmotion(emotion_str.c_str());
-                    // }
+                    // 触发耳朵动作（让耳朵控制器自己处理重复检查）
+                    auto ear_controller = Board::GetInstance().GetEarController();
+                    if (ear_controller) {
+                        ear_controller->TriggerEmotion(emotion_str.c_str());
+                    }
                 });
             }
         } else if (strcmp(type->valuestring, "mcp") == 0) {
@@ -550,17 +628,15 @@ void Application::Start() {
         audio_service_.PlaySound(Lang::Sounds::OGG_SUCCESS);
     }
 
-    // // Initialize ear controller emotion mappings
-    // auto ear_controller = Board::GetInstance().GetEarController();
-    // ESP_LOGI(TAG, "Getting ear controller for emotion mapping initialization: %s", ear_controller ? "valid" : "null");
-    // if (ear_controller) {
-    //     ESP_LOGI(TAG, "Starting ear controller emotion mapping initialization");
-    //     // 情绪映射已在 Tc118sEarController::Initialize() 中自动设置
-        
-    //     ESP_LOGI(TAG, "Ear controller emotion mapping initialization completed");
-    // } else {
-    //     ESP_LOGW(TAG, "No ear controller available for emotion mapping initialization");
-    // }
+    // Initialize ear controller emotion mappings
+    auto ear_controller = Board::GetInstance().GetEarController();
+    ESP_LOGI(TAG, "Getting ear controller for emotion mapping initialization: %s", ear_controller ? "valid" : "null");
+    if (ear_controller) {
+        ESP_LOGI(TAG, "Ear controller emotion mapping initialization completed");
+        // 情绪映射已在 Tc118sEarController::Initialize() 中自动设置
+    } else {
+        ESP_LOGW(TAG, "No ear controller available for emotion mapping initialization");
+    }
     
     // Print heap stats
     SystemInfo::PrintHeapStats(); 
@@ -722,7 +798,7 @@ void Application::SetDeviceState(DeviceState state) {
     led->OnStateChanged();
     
     // 获取耳朵控制器
-    // auto ear_controller = board.GetEarController();
+    auto ear_controller = board.GetEarController();
     
     switch (state) {
         case kDeviceStateUnknown:
@@ -733,10 +809,15 @@ void Application::SetDeviceState(DeviceState state) {
             audio_service_.EnableWakeWordDetection(true);
             
             // 空闲状态时确保耳朵下垂
-            // if (ear_controller) {
-            //     ESP_LOGI(TAG, "Device entering idle state, ensuring ears are down");
-            //     ear_controller->SetEarInitialPosition();
-            // }
+            if (ear_controller) {
+                // 等待序列完成，避免冲突
+                if (ear_controller->IsSequenceActive()) {
+                    ESP_LOGI(TAG, "Sequence active, skipping ear reset to avoid conflict");
+                } else {
+                    ESP_LOGI(TAG, "Device entering idle state, ensuring ears are down");
+                    ear_controller->SetEarInitialPosition();
+                }
+            }
             break;
         case kDeviceStateConnecting:
             display->SetStatus(Lang::Strings::CONNECTING);
@@ -768,8 +849,16 @@ void Application::SetDeviceState(DeviceState state) {
             ESP_LOGI(TAG, "kDeviceStateListening state setup completed");
             break;
         case kDeviceStateSpeaking:
+        {
             ESP_LOGI(TAG, "Entering kDeviceStateSpeaking state");
             display->SetStatus(Lang::Strings::SPEAKING);
+
+            // 强制确保音频输出启用（speaking 状态必须启用音频输出）
+            auto speaking_codec = Board::GetInstance().GetAudioCodec();
+            if (speaking_codec) {
+                speaking_codec->EnableOutput(true);
+                ESP_LOGI(TAG, "Audio output enabled for speaking state");
+            }
 
             if (listening_mode_ != kListeningModeRealtime) {
                 ESP_LOGI(TAG, "listening_mode_ != kListeningModeRealtime, disabling voice processing");
@@ -792,6 +881,15 @@ void Application::SetDeviceState(DeviceState state) {
             audio_service_.ResetDecoder();
             ESP_LOGI(TAG, "audio_service_.ResetDecoder() completed");
             ESP_LOGI(TAG, "kDeviceStateSpeaking state setup completed");
+            break;
+        }
+        case kDeviceStateStarting:
+        case kDeviceStateWifiConfiguring:
+        case kDeviceStateUpgrading:
+        case kDeviceStateActivating:
+        case kDeviceStateAudioTesting:
+        case kDeviceStateFatalError:
+            // 未使用的状态在此不做处理
             break;
         default:
             // Do nothing
@@ -1053,14 +1151,22 @@ void Application::HandleTouchEventInIdleState(const std::string& message) {
     SetListeningMode(kListeningModeAutoStop);
     ESP_LOGI(TAG, "SetListeningMode(kListeningModeAutoStop) completed");
     
-    // 4. 延迟切换到说话状态，给音频处理足够时间建立
-    ESP_LOGI(TAG, "Delaying switch to Speaking state to allow audio processing to establish");
-    // 使用任务延迟给音频处理足够时间建立
-    vTaskDelay(pdMS_TO_TICKS(500)); // 延迟1秒，给音频处理足够时间
-    ESP_LOGI(TAG, "Delayed switch to Speaking state for touch event response");
-    SetDeviceState(kDeviceStateSpeaking);
+    // 4. 不再使用vTaskDelay阻塞主循环
+    // 服务器返回tts start消息后会自动切换到speaking状态
+    // 如果服务器没有响应，SetListeningMode已经设置了自动停止模式，会自动处理
     
-    // 5. 确保音频输出启用（解决音频输出被禁用的问题）
+    // 5. 确保音频通道仍然打开（可能在状态切换过程中被关闭）
+    if (!protocol_ || !protocol_->IsAudioChannelOpened()) {
+        ESP_LOGW(TAG, "Audio channel closed unexpectedly during touch event processing");
+        SetDeviceState(kDeviceStateConnecting);
+        if (!protocol_->OpenAudioChannel()) {
+            ESP_LOGE(TAG, "Failed to reopen audio channel for touch event");
+            SetDeviceState(kDeviceStateIdle);
+            return;
+        }
+    }
+    
+    // 6. 确保音频输出启用（解决音频输出被禁用的问题）
     auto codec = Board::GetInstance().GetAudioCodec();
     if (codec) {
         ESP_LOGI(TAG, "Ensuring audio output is enabled for touch event");

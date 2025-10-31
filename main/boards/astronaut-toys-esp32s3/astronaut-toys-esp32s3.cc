@@ -463,7 +463,7 @@ private:
                 if (gpio_config(&io_conf) == ESP_OK) {
                     gpio_set_level(EAR_MOTO_EN_GPIO, 1);
                     // 延时等待10ms，确保电机电源稳定
-                    // vTaskDelay(pdMS_TO_TICKS(150));
+                    vTaskDelay(pdMS_TO_TICKS(150));
                     ESP_LOGI(TAG, "Ear motor power enabled on GPIO %d", EAR_MOTO_EN_GPIO);
                 } else {
                     ESP_LOGE(TAG, "Failed to config ear motor power GPIO %d", EAR_MOTO_EN_GPIO);

@@ -373,16 +373,12 @@ esp_err_t Tc118sEarController::MoveBoth(ear_combo_param_t combo) {
     ESP_LOGI(TAG, "Moving both ears: combo=%d, duration=%lu ms", 
              combo.combo_action, combo.duration_ms);
     
-    // 根据组合动作类型设置双耳GPIO状态
+    // 根据组合动作类型设置双耳GPIO状态（对双耳同时动作引入错峰启动）
     switch (combo.combo_action) {
         case EAR_COMBO_BOTH_FORWARD:
-            SetGpioLevels(true, EAR_ACTION_FORWARD);
-            SetGpioLevels(false, EAR_ACTION_FORWARD);
-            break;
-            
         case EAR_COMBO_BOTH_BACKWARD:
-            SetGpioLevels(true, EAR_ACTION_BACKWARD);
-            SetGpioLevels(false, EAR_ACTION_BACKWARD);
+            // 异步错峰启动，避免在定时器任务内阻塞
+            StartBothWithStagger(combo.combo_action, combo.duration_ms);
             break;
             
         case EAR_COMBO_BOTH_STOP:
@@ -917,6 +913,79 @@ void Tc118sEarController::TestEarSequences() {
 void Tc118sEarController::OnStopTimer(TimerHandle_t timer) {
     ESP_LOGI(TAG, "Stop timer triggered - stopping both ears");
     StopBoth();
+}
+
+
+// ===== 启动策略实现 =====
+void Tc118sEarController::SoftStartSingleEar(bool left_ear, ear_action_t action) {
+#if EAR_SOFTSTART_ENABLE
+    // 预留：后续可使用 LEDC 对方向有效引脚做占空比渐升
+    // 当前占位实现：直接设置 GPIO 水平（等价于无软启动）
+#endif
+    SetGpioLevels(left_ear, action);
+}
+
+void Tc118sEarController::StartBothWithStagger(ear_combo_action_t combo_action, uint32_t duration_ms) {
+    // 在独立任务中执行，避免阻塞定时器服务任务
+    auto task_fn = [](void* arg) {
+        auto* ctx = static_cast<struct {
+            Tc118sEarController* self;
+            ear_combo_action_t action;
+            uint32_t duration_ms;
+        }*>(arg);
+
+        Tc118sEarController* self = ctx->self;
+        ear_combo_action_t action = ctx->action;
+        // duration_ms 由上层定时器控制，不在此任务内处理停止
+
+        // 左耳先行，再错峰右耳
+        if (action == EAR_COMBO_BOTH_FORWARD) {
+            self->SoftStartSingleEar(true, EAR_ACTION_FORWARD);
+            if (EAR_START_STAGGER_MS > 0) {
+                vTaskDelay(pdMS_TO_TICKS(EAR_START_STAGGER_MS));
+            }
+            self->SoftStartSingleEar(false, EAR_ACTION_FORWARD);
+        } else if (action == EAR_COMBO_BOTH_BACKWARD) {
+            self->SoftStartSingleEar(true, EAR_ACTION_BACKWARD);
+            if (EAR_START_STAGGER_MS > 0) {
+                vTaskDelay(pdMS_TO_TICKS(EAR_START_STAGGER_MS));
+            }
+            self->SoftStartSingleEar(false, EAR_ACTION_BACKWARD);
+        }
+
+        vPortFree(ctx);
+        vTaskDelete(nullptr);
+    };
+
+    auto* payload = (decltype(payload))pvPortMalloc(sizeof(*payload));
+    if (!payload) {
+        ESP_LOGW(TAG, "StartBothWithStagger: alloc failed, fallback to simultaneous start");
+        // 退化为同时启动
+        if (combo_action == EAR_COMBO_BOTH_FORWARD) {
+            SetGpioLevels(true, EAR_ACTION_FORWARD);
+            SetGpioLevels(false, EAR_ACTION_FORWARD);
+        } else if (combo_action == EAR_COMBO_BOTH_BACKWARD) {
+            SetGpioLevels(true, EAR_ACTION_BACKWARD);
+            SetGpioLevels(false, EAR_ACTION_BACKWARD);
+        }
+        return;
+    }
+    payload->self = this;
+    payload->action = combo_action;
+    payload->duration_ms = duration_ms;
+
+    BaseType_t ok = xTaskCreate(task_fn, "ear_stagger_start", 2048, payload, 5, nullptr);
+    if (ok != pdPASS) {
+        ESP_LOGW(TAG, "StartBothWithStagger: task create failed, fallback to simultaneous start");
+        vPortFree(payload);
+        if (combo_action == EAR_COMBO_BOTH_FORWARD) {
+            SetGpioLevels(true, EAR_ACTION_FORWARD);
+            SetGpioLevels(false, EAR_ACTION_FORWARD);
+        } else if (combo_action == EAR_COMBO_BOTH_BACKWARD) {
+            SetGpioLevels(true, EAR_ACTION_BACKWARD);
+            SetGpioLevels(false, EAR_ACTION_BACKWARD);
+        }
+    }
 }
 
 

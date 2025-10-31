@@ -37,9 +37,14 @@
 #define EAR_PAUSE_XLONG_MS          300
 #define EAR_PAUSE_XXLONG_MS         500
 
-// // 软启动/错峰控制（供上层引用）
-// #define EAR_POWER_ON_STABILIZE_MS   150
-// #define EAR_START_STAGGER_MS        60
+// 软启动/错峰控制（供上层引用）
+#define EAR_POWER_ON_STABILIZE_MS   150   // 板级已实现电源稳定等待（参考值）
+#define EAR_START_STAGGER_MS        80    // 双耳启动错峰间隔（毫秒），建议 60–120 之间
+
+// 软启动开关与参数（默认关闭，后续需要可开启并完善 PWM）
+#define EAR_SOFTSTART_ENABLE        0     // 0: 关闭；1: 开启
+#define EAR_SOFTSTART_TIME_MS       200   // 软启动总时长（毫秒）
+#define EAR_SOFTSTART_STEPS         8     // 软启动步数
 
 class Tc118sEarController : public EarController {
 public:
@@ -118,6 +123,10 @@ private:
     void UpdateEmotionState(const char* emotion);
     void SetEarFinalPosition();
     void OnStopTimer(TimerHandle_t timer);
+
+    // 启动策略
+    void SoftStartSingleEar(bool left_ear, ear_action_t action);
+    void StartBothWithStagger(ear_combo_action_t combo_action, uint32_t duration_ms);
 
     // 默认情绪序列定义 - 基于时间控制的情绪表达
     static const ear_sequence_step_t happy_sequence_[];

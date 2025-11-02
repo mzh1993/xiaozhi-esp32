@@ -50,8 +50,7 @@ private:
     Button boot_button_;
     Button volume_up_button_;
     Button volume_down_button_;
-    // Button key1_button_;
-    // Button key2_button_;
+
     // 添加 OLED 屏幕配置
     esp_lcd_panel_io_handle_t panel_io_ = nullptr;
     esp_lcd_panel_handle_t panel_ = nullptr;
@@ -80,9 +79,6 @@ private:
 
     // 耳朵控制器
     EarController* ear_controller_ = nullptr;
-    
-    // 风扇控制器
-    FanController* fan_controller_ = nullptr;
     
     
     // 情绪+文本绑定结构
@@ -182,54 +178,6 @@ private:
         std::uniform_int_distribution<> dis(0, it->second.size() - 1);
         return it->second[dis(gen)].text;
     }
-    
-    std::vector<std::string> head_touch_texts_ = {
-        "用户轻轻摸了摸我的小脑袋，我感觉很舒服，想和用户互动",
-        "用户温柔地抚摸我的头部，让我感到被关爱，想表达感谢",
-        "用户摸了我的头，让我很开心，想和用户一起玩耍",
-        "用户轻抚我的脑袋，我感觉很温暖，想和用户亲近",
-        "用户摸我的头，让我感到快乐，想和用户分享这份喜悦"
-    };
-    
-    std::vector<std::string> head_long_press_texts_ = {
-        "用户长时间抚摸我的小脑袋，让我感到非常舒适和安心，想和用户建立更深的情感连接",
-        "用户持续摸我的头，让我感受到深深的爱意，想和用户一起度过美好时光",
-        "用户长时间轻抚我的头部，让我感到被珍视，想和用户分享内心的温暖",
-        "用户持续摸我的头，让我感到无比幸福，想和用户一起创造美好回忆",
-        "用户长时间抚摸我的脑袋，让我感到被理解，想和用户建立深厚的友谊"
-    };
-    
-    std::vector<std::string> nose_touch_texts_ = {
-        "用户轻轻点了点我的小鼻子，让我感到很有趣，想和用户一起玩耍",
-        "用户摸了我的鼻子，让我感到好奇，想和用户互动",
-        "用户轻触我的鼻子，让我感到开心，想和用户一起笑",
-        "用户摸我的鼻子，让我感到兴奋，想和用户一起探索",
-        "用户点了我的鼻子，让我感到快乐，想和用户分享这份喜悦"
-    };
-    
-    std::vector<std::string> nose_long_press_texts_ = {
-        "用户一直摸我的鼻子，让我感到非常痒痒和有趣，想和用户一起做游戏",
-        "用户持续摸我的鼻子，让我感到被关注，想和用户建立亲密关系",
-        "用户长时间摸我的鼻子，让我感到很开心，想和用户一起创造快乐",
-        "用户持续摸我的鼻子，让我感到被爱，想和用户分享内心的温暖",
-        "用户长时间摸我的鼻子，让我感到无比幸福，想和用户一起度过美好时光"
-    };
-    
-    std::vector<std::string> belly_touch_texts_ = {
-        "用户轻轻摸了摸我的小肚子，让我感到很开心，想和用户一起玩耍",
-        "用户摸了我的肚子，让我感到温暖，想和用户亲近",
-        "用户轻抚我的肚子，让我感到舒适，想和用户一起放松",
-        "用户摸我的肚子，让我感到快乐，想和用户分享这份喜悦",
-        "用户摸了我的肚子，让我感到被关爱，想和用户建立情感连接"
-    };
-    
-    std::vector<std::string> belly_long_press_texts_ = {
-        "用户一直摸我的肚子，让我感到非常舒适和安心，想和用户一起享受这份温暖",
-        "用户持续摸我的肚子，让我感到被珍视，想和用户建立深厚的友谊",
-        "用户长时间摸我的肚子，让我感到无比幸福，想和用户一起创造美好回忆",
-        "用户持续摸我的肚子，让我感到被理解，想和用户分享内心的温暖",
-        "用户长时间摸我的肚子，让我感到被爱，想和用户一起度过美好时光"
-    };
 
     // 随机选择文本的辅助函数
     std::string GetRandomText(const std::vector<std::string>& texts) {
@@ -426,7 +374,6 @@ private:
                  LEFT_EAR_INA_GPIO, LEFT_EAR_INB_GPIO, RIGHT_EAR_INA_GPIO, RIGHT_EAR_INB_GPIO);
         
         // 创建TC118S耳朵控制器实例
-        ESP_LOGI(TAG, "Creating Tc118sEarController instance");
         ear_controller_ = new Tc118sEarController(
             LEFT_EAR_INA_GPIO, LEFT_EAR_INB_GPIO,
             RIGHT_EAR_INA_GPIO, RIGHT_EAR_INB_GPIO
@@ -439,11 +386,8 @@ private:
         // 初始化耳朵控制器
         esp_err_t ret = ear_controller_->Initialize();
         if (ret != ESP_OK) {
-            delete ear_controller_;
-            
-            ESP_LOGI(TAG, "Creating NoEarController instance as fallback");
-            ear_controller_ = new NoEarController();
-            
+            delete ear_controller_;          
+            ear_controller_ = new NoEarController();         
             if (!ear_controller_) {
                 ESP_LOGE(TAG, "Failed to create NoEarController instance");
                 return;
@@ -473,54 +417,6 @@ private:
         }
         
         ESP_LOGI(TAG, "=== Ear controller initialization completed successfully ===");
-    }
-
-    void DelayedEarReset() {
-        ESP_LOGI(TAG, "=== Starting delayed ear reset ===");
-        
-        // 创建异步任务来执行耳朵复位，避免阻塞主线程
-        TaskHandle_t reset_task_handle = nullptr;
-        BaseType_t task_created = xTaskCreate(
-            [](void* param) {
-                AstronautToysESP32S3* self = static_cast<AstronautToysESP32S3*>(param);
-                if (self) {
-                    self->ExecuteEarReset();
-                }
-                vTaskDelete(nullptr);
-            },
-            "ear_reset_task",
-            4096,  // 堆栈大小
-            this,  // 传递this指针
-            5,     // 任务优先级
-            &reset_task_handle
-        );
-        
-        if (task_created == pdPASS) {
-            ESP_LOGI(TAG, "Ear reset task created successfully");
-        } else {
-            ESP_LOGW(TAG, "Failed to create ear reset task, executing synchronously");
-            // 如果任务创建失败，同步执行
-            ExecuteEarReset();
-        }
-    }
-    
-    void ExecuteEarReset() {
-        ESP_LOGI(TAG, "=== Executing ear reset ===");
-        
-        // 等待GPIO初始化完成
-        vTaskDelay(pdMS_TO_TICKS(1000)); // 延迟1秒
-        
-        if (ear_controller_) {
-            ESP_LOGI(TAG, "Setting ears to initial DOWN position for system startup");
-            
-            // 使用专门的初始化方法设置下垂位置
-            ear_controller_->SetEarInitialPosition();
-            ESP_LOGI(TAG, "Ears successfully set to initial DOWN position");
-        } else {
-            ESP_LOGW(TAG, "No ear controller available for delayed reset");
-        }
-        
-        ESP_LOGI(TAG, "=== Ear reset execution completed ===");
     }
 
     void InitializeButtons() {
@@ -706,34 +602,23 @@ public:
     volume_down_button_(VOLUME_DOWN_BUTTON_GPIO),
     // key1_button_(KEY1_BUTTON_GPIO),
     // key2_button_(KEY2_BUTTON_GPIO),
-    head_touch_button_(TOUCH_CHANNEL_HEAD, 0.55f),    // 触摸按钮对象创建
-    nose_touch_button_(TOUCH_CHANNEL_NOSE, 0.55f),    // 触摸按钮对象创建
-    belly_touch_button_(TOUCH_CHANNEL_BELLY, 0.55f) { // 触摸按钮对象创建
+    head_touch_button_(TOUCH_CHANNEL_HEAD, 0.05f),    // 触摸按钮对象创建
+    nose_touch_button_(TOUCH_CHANNEL_NOSE, 0.05f),    // 触摸按钮对象创建
+    belly_touch_button_(TOUCH_CHANNEL_BELLY, 0.05f) { // 触摸按钮对象创建
         
-        // InitializeADC();
+        // InitializeADC(); // 电池采样电路
         InitializeCodecI2c();
         // InitializeSsd1306Display();
         InitializeTouchSensor();  // 触摸传感器初始化（已屏蔽）
         InitializeButtons();      // 按钮事件初始化
         // InitializePowerSaveTimer();
-        InitializeEarController(); // 初始化耳朵控制器
+        
         // InitializeMemoryMonitor();  // 初始化内存监控  
         // InitializeTools();
         
-        // 延迟执行耳朵复位，确保GPIO初始化完成
-        // ESP_LOGI(TAG, "Scheduling delayed ear reset for debug mode");
-        // DelayedEarReset();
-        
-        // // 调试模式说明
-        // ESP_LOGI(TAG, "=== EAR CONTROLLER DEBUG MODE ENABLED ===");
-        // ESP_LOGI(TAG, "KEY2 Click: Cycle through ear function tests");
-        // ESP_LOGI(TAG, "  - Basic Functions (单耳控制)");
-        // ESP_LOGI(TAG, "  - Positions (位置控制)");
-        // ESP_LOGI(TAG, "  - Combinations (组合动作)");
-        // ESP_LOGI(TAG, "  - Sequences (情绪序列)");
-        // ESP_LOGI(TAG, "KEY2 Long Press: Stop all tests and reset ears");
-        // ESP_LOGI(TAG, "Touch sensors and fan controller are DISABLED in debug mode");
-        // ESP_LOGI(TAG, "================================================");
+        // 初始化耳朵控制器（但不立即复位，等待Application启动后再复位）
+        InitializeEarController(); 
+
     }
 
     ~AstronautToysESP32S3() {
@@ -770,11 +655,6 @@ public:
     virtual EarController* GetEarController() override {
         ESP_LOGI(TAG, "GetEarController called, returning: %s", ear_controller_ ? "valid" : "null");
         return ear_controller_;
-    }
-
-    virtual FanController* GetFanController() override {
-        ESP_LOGW(TAG, "GetFanController called but fan controller is disabled in debug mode");
-        return nullptr; // 调试模式下风扇控制器被禁用
     }
 
     // virtual bool GetBatteryLevel(int &level, bool &charging, bool &discharging) {

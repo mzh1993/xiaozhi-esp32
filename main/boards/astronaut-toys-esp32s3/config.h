@@ -27,8 +27,8 @@
 // #define KEY2_BUTTON_GPIO GPIO_NUM_42
 
 // 触摸按钮通道定义 
-#define TOUCH_CHANNEL_NOSE      (1)  
-#define TOUCH_CHANNEL_HEAD      (2) 
+#define TOUCH_CHANNEL_HEAD      (1) 
+#define TOUCH_CHANNEL_NOSE      (2)  
 #define TOUCH_CHANNEL_BELLY     (7) 
 
 // #define LAMP_GPIO GPIO_NUM_18

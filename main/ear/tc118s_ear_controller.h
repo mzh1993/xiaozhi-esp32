@@ -8,9 +8,9 @@
 
 // ===== 电机延时参数配置 - 基于实际测试优化 =====
 // 耳朵位置控制延时参数（单位：毫秒）
-#define EAR_POSITION_DOWN_TIME_MS      50     // 耳朵从竖起到下垂所需时间
-#define EAR_POSITION_UP_TIME_MS        50     // 耳朵从下垂到竖起所需时间
-#define EAR_POSITION_MIDDLE_TIME_MS    40      // 耳朵从竖起最高点回到中间位置所需时间（从20增加到40，确保动作完整）
+#define EAR_POSITION_DOWN_TIME_MS      200     // 耳朵从竖起到下垂所需时间
+#define EAR_POSITION_UP_TIME_MS        200     // 耳朵从下垂到竖起所需时间
+#define EAR_POSITION_MIDDLE_TIME_MS    100      // 耳朵从竖起最高点回到中间位置所需时间（从20增加到40，确保动作完整）
 
 // 场景动作延时参数
 #define SCENARIO_DEFAULT_DELAY_MS      100     // 场景步骤间默认延时（增加）

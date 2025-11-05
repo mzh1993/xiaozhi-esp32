@@ -109,6 +109,9 @@ public:
     bool ReadAudioData(std::vector<int16_t>& data, int sample_rate, int samples);
     void ResetDecoder();
     void SetModelsList(srmodel_list_t* models_list);
+    // Speaking 期间抑制自动关断与首包保护
+    void SetSuppressOutputPowerOff(bool suppress);
+    void RefreshLastOutputTime();
 
 private:
     AudioCodec* codec_ = nullptr;
@@ -149,6 +152,7 @@ private:
     esp_timer_handle_t audio_power_timer_ = nullptr;
     std::chrono::steady_clock::time_point last_input_time_;
     std::chrono::steady_clock::time_point last_output_time_;
+    bool suppress_output_power_off_ = false;
 
     void AudioInputTask();
     void AudioOutputTask();

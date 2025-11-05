@@ -329,7 +329,7 @@ void AudioService::OpusCodecTask() {
                 audio_playback_queue_.push_back(std::move(task));
                 audio_queue_cv_.notify_all();
             } else {
-                ESP_LOGE(TAG, "Failed to decode audio");
+                ESP_LOGE(TAG, "OpusCodecTask: decode failed");
                 lock.lock();
             }
             debug_statistics_.decode_count++;

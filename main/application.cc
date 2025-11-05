@@ -631,16 +631,6 @@ void Application::Start() {
     // Initialize ear controller emotion mappings
     auto ear_controller = Board::GetInstance().GetEarController();
     ESP_LOGI(TAG, "Getting ear controller for emotion mapping initialization: %s", ear_controller ? "valid" : "null");
-    if (ear_controller) {
-        ESP_LOGI(TAG, "Ear controller emotion mapping initialization completed");
-        // 情绪映射已在 Tc118sEarController::Initialize() 中自动设置
-        
-        // 系统启动完成后，设置耳朵到初始下垂位置
-        ESP_LOGI(TAG, "Setting ears to initial DOWN position after system startup");
-        ear_controller->SetEarInitialPosition();
-    } else {
-        ESP_LOGW(TAG, "No ear controller available for emotion mapping initialization");
-    }
     
     // Print heap stats
     SystemInfo::PrintHeapStats(); 

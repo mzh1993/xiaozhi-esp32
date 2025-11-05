@@ -592,9 +592,10 @@ esp_err_t Tc118sEarController::StopSequence() {
     ESP_LOGI(TAG, "StopSequence called: sequence_active=%s, emotion_action_active=%s", 
              sequence_active_ ? "true" : "false", emotion_action_active_ ? "true" : "false");
     
+    // 无论是否有活跃序列，都应该重置 emotion_action_active_ 状态
+    // 这样即使序列已经完成但状态未清除，也能正确处理后续情绪触发
     if (sequence_active_) {
         sequence_active_ = false;
-        emotion_action_active_ = false;
         
         if (sequence_timer_) {
             xTimerStop(sequence_timer_, 0);
@@ -605,6 +606,10 @@ esp_err_t Tc118sEarController::StopSequence() {
     } else {
         ESP_LOGI(TAG, "No active sequence to stop");
     }
+    
+    // 无条件重置情绪激活状态，确保下次可以触发
+    emotion_action_active_ = false;
+    
     return ESP_OK;
 }
 

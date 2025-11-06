@@ -1,8 +1,10 @@
 #include "tc118s_ear_controller.h"
+#include "application.h"
 #include <esp_log.h>
 #include <esp_err.h>
 #include "esp_timer.h"
 #include <string.h>
+#include <cinttypes>
 
 static const char *TAG = "TC118S_EAR_CONTROLLER";
 
@@ -836,7 +838,7 @@ bool Tc118sEarController::ShouldTriggerEmotion(const char* emotion) {
     // 如果情绪相同且还在冷却期内，不触发
     if (current_emotion_ == emotion && 
         (current_time - last_emotion_time_) < EMOTION_COOLDOWN_MS) {
-        ESP_LOGI(TAG, "Emotion %s still in cooldown (%llu ms remaining), skipping trigger", 
+        ESP_LOGI(TAG, "Emotion %s still in cooldown (%" PRIu64 " ms remaining), skipping trigger", 
                  emotion, EMOTION_COOLDOWN_MS - (current_time - last_emotion_time_));
         return false;
     }
@@ -854,7 +856,7 @@ void Tc118sEarController::UpdateEmotionState(const char* emotion) {
     last_emotion_time_ = esp_timer_get_time() / 1000;
     emotion_action_active_ = true;
     
-    ESP_LOGI(TAG, "Updated emotion state: %s, time: %llu", emotion, last_emotion_time_);
+    ESP_LOGI(TAG, "Updated emotion state: %s, time: %" PRIu64, emotion, last_emotion_time_);
 }
 
 void Tc118sEarController::SetEarFinalPosition() {

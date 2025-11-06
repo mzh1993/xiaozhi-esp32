@@ -70,6 +70,18 @@ public:
     QueueHandle_t GetPeripheralTaskQueue() { return peripheral_task_queue_; }
     // 外设动作投递（情绪）
     void SchedulePeripheralEmotion(const std::string& emotion);
+    
+    // 外设任务类型定义
+    enum class PeripheralAction {
+        kEarEmotion = 0,
+        kEarSequence = 1
+    };
+    struct PeripheralTask {
+        PeripheralAction action;
+        std::string emotion;
+        int combo_action = 0;
+        uint32_t duration_ms = 0;
+    };
 
 private:
     Application();
@@ -122,16 +134,6 @@ private:
     // 外设 Worker
     QueueHandle_t peripheral_task_queue_ = nullptr;
     TaskHandle_t peripheral_worker_task_handle_ = nullptr;
-    enum class PeripheralAction {
-        kEarEmotion = 0,
-        kEarSequence = 1
-    };
-    struct PeripheralTask {
-        PeripheralAction action;
-        std::string emotion;
-        int combo_action = 0;
-        uint32_t duration_ms = 0;
-    };
 
     void OnWakeWordDetected();
     void OnClockTimer();

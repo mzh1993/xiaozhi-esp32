@@ -12,6 +12,7 @@
 #include "settings.h"
 
 #include <cstring>
+#include <cinttypes>
 #include <esp_log.h>
 #include <cJSON.h>
 #include <driver/gpio.h>
@@ -501,11 +502,16 @@ void Application::Start() {
             // 首包监控：记录 tts start 到首包延迟
             if (first_packet_monitoring_ && first_packet_arrival_time_ms_ == 0) {
                 first_packet_arrival_time_ms_ = esp_timer_get_time() / 1000;
-                uint64_t elapsed = first_packet_arrival_time_ms_ - last_tts_start_time_ms_;
-                if (elapsed > 3000) {
-                    ESP_LOGW(TAG, "First packet delay: %llu ms (>3000)", (unsigned long long)elapsed);
+                if (last_tts_start_time_ms_ > 0 && first_packet_arrival_time_ms_ >= last_tts_start_time_ms_) {
+                    uint64_t elapsed = first_packet_arrival_time_ms_ - last_tts_start_time_ms_;
+                    if (elapsed > 3000) {
+                        ESP_LOGW(TAG, "First packet delay: %" PRIu64 " ms (>3000)", elapsed);
+                    } else {
+                        ESP_LOGI(TAG, "First packet delay: %" PRIu64 " ms", elapsed);
+                    }
                 } else {
-                    ESP_LOGI(TAG, "First packet delay: %llu ms", (unsigned long long)elapsed);
+                    ESP_LOGW(TAG, "First packet delay: invalid time (tts_start=%" PRIu64 ", arrival=%" PRIu64 ")",
+                             last_tts_start_time_ms_, first_packet_arrival_time_ms_);
                 }
                 first_packet_monitoring_ = false;
             }
@@ -572,8 +578,15 @@ void Application::Start() {
 
                     // 取消触摸超时定时器（若仍在等待）
                     if (touch_timeout_timer_) {
-                        esp_timer_stop(touch_timeout_timer_);
-                        ESP_LOGI(TAG, "Touch timeout cancelled by tts start");
+                        // 检查定时器是否真的在运行（避免唤醒词场景下的误导日志）
+                        uint64_t expiry_time = 0;
+                        if (esp_timer_get_expiry_time(touch_timeout_timer_, &expiry_time) == ESP_OK) {
+                            int64_t remaining = expiry_time - esp_timer_get_time();
+                            if (remaining > 0) {
+                                esp_timer_stop(touch_timeout_timer_);
+                                ESP_LOGI(TAG, "Touch timeout cancelled by tts start");
+                            }
+                        }
                     }
 
                     // 重置触摸重试状态
@@ -612,7 +625,7 @@ void Application::Start() {
                     }
                     
                     // 刷新输出时间，首包保护
-                    audio_service_.RefreshOutputTime();
+                    audio_service_.RefreshLastOutputTime();
 
                     // 强制确保音频输出启用
                     auto codec = Board::GetInstance().GetAudioCodec();
@@ -1406,17 +1419,21 @@ void Application::HandleTouchEventInIdleState(const std::string& message) {
     }
     
     // 2. 发送触摸事件消息
+    // 注意：去重逻辑已在 OnTouchDebounce() 中处理，这里不再重复去重
+    uint64_t now_ms = esp_timer_get_time() / 1000;
     if (protocol_) {
         ESP_LOGI(TAG, "Sending touch event message: %s", message.c_str());
         protocol_->SendMessage(message);
         ESP_LOGI(TAG, "Touch event message sent successfully");
+        
+        // 更新触摸事件时间戳，用于超时判断
+        touch_event_time_ms_ = now_ms;
     } else {
         ESP_LOGE(TAG, "Protocol not available for touch event");
         return;
     }
 
     // 3. 检查是否启用保护模式（连续超时后跳过listen+start）
-    uint64_t now_ms = esp_timer_get_time() / 1000;
     bool in_protection = (direct_speaking_protection_mode_ && 
                           now_ms < protection_mode_until_ms_);
     
@@ -1424,7 +1441,7 @@ void Application::HandleTouchEventInIdleState(const std::string& message) {
         // 保护模式：直接进入speaking保护，不等待tts start
         ESP_LOGW(TAG, "Direct speaking protection mode: skipping listen+start");
         SetDeviceState(kDeviceStateSpeaking);
-        audio_service_.RefreshOutputTime();
+        audio_service_.RefreshLastOutputTime();
         auto codec = Board::GetInstance().GetAudioCodec();
         if (codec) {
             codec->EnableOutput(true);
@@ -1432,16 +1449,16 @@ void Application::HandleTouchEventInIdleState(const std::string& message) {
         return;
     }
     
-    // 正常流程：不立即进入 listening，等待服务器 tts start（去监听化）
+    // 4. 正常流程：不立即进入 listening，等待服务器 tts start（去监听化）
     // 启动触摸超时定时器（3秒），超时回退到 listening
-    touch_event_time_ms_ = esp_timer_get_time() / 1000;
+    // touch_event_time_ms_ 已在发送消息或去重时更新
     if (touch_timeout_timer_) {
         esp_timer_stop(touch_timeout_timer_);
         esp_timer_start_once(touch_timeout_timer_, 3000000);
         ESP_LOGI(TAG, "Touch timeout timer started (3s)");
     }
 
-    // 4. 确保音频通道仍然打开（可能在状态切换过程中被关闭）
+    // 5. 确保音频通道仍然打开（可能在状态切换过程中被关闭）
     if (!protocol_ || !protocol_->IsAudioChannelOpened()) {
         ESP_LOGW(TAG, "Audio channel closed unexpectedly during touch event processing");
         SetDeviceState(kDeviceStateConnecting);
@@ -1452,7 +1469,7 @@ void Application::HandleTouchEventInIdleState(const std::string& message) {
         }
     }
     
-    // 5. 确保音频输出启用（为首包做准备）
+    // 6. 确保音频输出启用（为首包做准备）
     auto codec = Board::GetInstance().GetAudioCodec();
     if (codec) {
         ESP_LOGI(TAG, "Ensuring audio output is enabled for touch event");

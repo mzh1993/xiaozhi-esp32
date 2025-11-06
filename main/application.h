@@ -4,6 +4,7 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/event_groups.h>
 #include <freertos/task.h>
+#include <freertos/queue.h>
 #include <esp_timer.h>
 
 #include <string>
@@ -65,6 +66,10 @@ public:
     AecMode GetAecMode() const { return aec_mode_; }
     void PlaySound(const std::string_view& sound);
     AudioService& GetAudioService() { return audio_service_; }
+    // 外设任务队列访问器
+    QueueHandle_t GetPeripheralTaskQueue() { return peripheral_task_queue_; }
+    // 外设动作投递（情绪）
+    void SchedulePeripheralEmotion(const std::string& emotion);
 
 private:
     Application();
@@ -93,6 +98,9 @@ private:
     uint64_t last_tts_start_time_ms_ = 0;
     // 最近一次触摸事件时间，用于判断超时与窗口
     uint64_t touch_event_time_ms_ = 0;
+    // 首包监控
+    bool first_packet_monitoring_ = false;
+    uint64_t first_packet_arrival_time_ms_ = 0;
     // 触摸重试：一次简单重试通道
     esp_timer_handle_t touch_retry_timer_ = nullptr;
     std::string pending_touch_message_;
@@ -100,6 +108,20 @@ private:
     // speaking中断后延迟处理触摸
     esp_timer_handle_t abort_delay_timer_ = nullptr;
     std::string abort_delay_message_;
+
+    // 外设 Worker
+    QueueHandle_t peripheral_task_queue_ = nullptr;
+    TaskHandle_t peripheral_worker_task_handle_ = nullptr;
+    enum class PeripheralAction {
+        kEarEmotion = 0,
+        kEarSequence = 1
+    };
+    struct PeripheralTask {
+        PeripheralAction action;
+        std::string emotion;
+        int combo_action = 0;
+        uint32_t duration_ms = 0;
+    };
 
     void OnWakeWordDetected();
     void OnClockTimer();
@@ -113,6 +135,7 @@ private:
     void OnTouchTimeout();
     void OnTouchRetry();
     void OnAbortDelay();
+    void PeripheralWorkerTask();
 };
 
 

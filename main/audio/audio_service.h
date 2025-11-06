@@ -6,6 +6,7 @@
 #include <condition_variable>
 #include <chrono>
 #include <mutex>
+#include <functional>
 
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
@@ -112,6 +113,7 @@ public:
     // Speaking 期间抑制自动关断与首包保护
     void SetSuppressOutputPowerOff(bool suppress);
     void RefreshLastOutputTime();
+    inline void SetIsSpeakingQuery(std::function<bool()> fn) { is_speaking_query_ = std::move(fn); }
 
 private:
     AudioCodec* codec_ = nullptr;
@@ -153,6 +155,7 @@ private:
     std::chrono::steady_clock::time_point last_input_time_;
     std::chrono::steady_clock::time_point last_output_time_;
     bool suppress_output_power_off_ = false;
+    std::function<bool()> is_speaking_query_;
 
     void AudioInputTask();
     void AudioOutputTask();
@@ -160,10 +163,10 @@ private:
     void PushTaskToEncodeQueue(AudioTaskType type, std::vector<int16_t>&& pcm);
     void SetDecodeSampleRate(int sample_rate, int frame_duration);
     void CheckAndUpdateAudioPowerState();
-  // 刷新输出时间戳，用于首包保护/抑制误关断
-  inline void RefreshOutputTime() {
-    last_output_time_ = std::chrono::steady_clock::now();
-  }
+    // 刷新输出时间戳，用于首包保护/抑制误关断
+    inline void RefreshOutputTime() {
+        last_output_time_ = std::chrono::steady_clock::now();
+    }
 };
 
 #endif

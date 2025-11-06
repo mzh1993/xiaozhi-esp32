@@ -414,6 +414,10 @@ void Application::Start() {
     auto codec = board.GetAudioCodec();
     audio_service_.Initialize(codec);
     audio_service_.Start();
+    // 注入speaking状态查询，去除音频服务对Application的直接依赖
+    audio_service_.SetIsSpeakingQuery([this]() {
+        return device_state_ == kDeviceStateSpeaking;
+    });
 
     AudioServiceCallbacks callbacks;
     callbacks.on_send_queue_available = [this]() {
@@ -476,6 +480,17 @@ void Application::Start() {
     });
     protocol_->OnIncomingAudio([this](std::unique_ptr<AudioStreamPacket> packet) {
         if (device_state_ == kDeviceStateSpeaking) {
+            // 首包监控：记录 tts start 到首包延迟
+            if (first_packet_monitoring_ && first_packet_arrival_time_ms_ == 0) {
+                first_packet_arrival_time_ms_ = esp_timer_get_time() / 1000;
+                uint64_t elapsed = first_packet_arrival_time_ms_ - last_tts_start_time_ms_;
+                if (elapsed > 3000) {
+                    ESP_LOGW(TAG, "First packet delay: %llu ms (>3000)", (unsigned long long)elapsed);
+                } else {
+                    ESP_LOGI(TAG, "First packet delay: %llu ms", (unsigned long long)elapsed);
+                }
+                first_packet_monitoring_ = false;
+            }
             audio_service_.PushPacketToDecodeQueue(std::move(packet));
         }
     });
@@ -533,6 +548,9 @@ void Application::Start() {
                     
                     // 记录 tts start 时间，用于通道关闭保护
                     last_tts_start_time_ms_ = esp_timer_get_time() / 1000;
+                    // 开启首包监控
+                    first_packet_monitoring_ = true;
+                    first_packet_arrival_time_ms_ = 0;
 
                     // 取消触摸超时定时器（若仍在等待）
                     if (touch_timeout_timer_) {
@@ -709,6 +727,16 @@ void Application::Start() {
     
     // Print heap stats
     SystemInfo::PrintHeapStats(); 
+
+    // 创建外设 Worker（队列 + 任务）
+    if (peripheral_task_queue_ == nullptr) {
+        peripheral_task_queue_ = xQueueCreate(16, sizeof(PeripheralTask));
+    }
+    if (peripheral_worker_task_handle_ == nullptr && peripheral_task_queue_ != nullptr) {
+        xTaskCreate([](void* arg){
+            static_cast<Application*>(arg)->PeripheralWorkerTask();
+        }, "peripheral_worker", 2048, this, 5, &peripheral_worker_task_handle_);
+    }
 }
 
 void Application::OnClockTimer() {
@@ -731,6 +759,10 @@ void Application::OnTouchTimeout() {
         // 若已进入 speaking，忽略超时
         if (device_state_ == kDeviceStateSpeaking) {
             ESP_LOGI(TAG, "Touch timeout: already speaking, ignore");
+            // 成功进入speaking，复位重试状态
+            touch_retry_attempt_ = 0;
+            pending_touch_message_.clear();
+            if (touch_retry_timer_) esp_timer_stop(touch_retry_timer_);
             return;
         }
 
@@ -750,6 +782,10 @@ void Application::OnTouchTimeout() {
         // 超时回退到 listening
         ESP_LOGW(TAG, "Touch timeout reached, entering listening");
         SetListeningMode(kListeningModeAutoStop);
+        // 回退后复位重试状态
+        touch_retry_attempt_ = 0;
+        pending_touch_message_.clear();
+        if (touch_retry_timer_) esp_timer_stop(touch_retry_timer_);
     });
 }
 
@@ -778,6 +814,45 @@ void Application::OnAbortDelay() {
         HandleTouchEventInIdleState(message);
     });
     abort_delay_message_.clear();
+}
+
+void Application::SchedulePeripheralEmotion(const std::string& emotion) {
+    if (peripheral_task_queue_ == nullptr) return;
+    PeripheralTask task{PeripheralAction::kEarEmotion, emotion};
+    xQueueSend(peripheral_task_queue_, &task, 0);
+}
+
+void Application::PeripheralWorkerTask() {
+    PeripheralTask task;
+    while (true) {
+        if (xQueueReceive(peripheral_task_queue_, &task, portMAX_DELAY) == pdTRUE) {
+            // speaking 首包窗口期（2s）抑制大动作
+            uint64_t now_ms = esp_timer_get_time() / 1000;
+            if (device_state_ == kDeviceStateSpeaking &&
+                last_tts_start_time_ms_ > 0 &&
+                (now_ms - last_tts_start_time_ms_) < 2000) {
+                uint64_t remain = 2000 - (now_ms - last_tts_start_time_ms_);
+                vTaskDelay(pdMS_TO_TICKS((uint32_t)remain));
+            }
+            auto ear = Board::GetInstance().GetEarController();
+            switch (task.action) {
+                case PeripheralAction::kEarEmotion:
+                    if (ear) ear->TriggerEmotion(task.emotion.c_str());
+                    break;
+                case PeripheralAction::kEarSequence: {
+                    if (ear) {
+                        ear_combo_param_t combo;
+                        combo.combo_action = static_cast<ear_combo_action_t>(task.combo_action);
+                        combo.duration_ms = task.duration_ms;
+                        ear->MoveBoth(combo);
+                    }
+                    break;
+                }
+                default:
+                    break;
+            }
+        }
+    }
 }
 
 // Add a async task to MainLoop

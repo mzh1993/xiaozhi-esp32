@@ -118,6 +118,12 @@ private:
     
     // 停止定时器 - 用于非阻塞的MoveBoth
     TimerHandle_t stop_timer_;
+    // 单耳停止定时器与上下文
+    TimerHandle_t stop_timer_left_ = nullptr;
+    TimerHandle_t stop_timer_right_ = nullptr;
+    struct StopCtx { Tc118sEarController* self; bool left; };
+    StopCtx* stop_ctx_left_ = nullptr;
+    StopCtx* stop_ctx_right_ = nullptr;
     
     // 耳朵位置状态跟踪 - 已从基类继承，无需重复声明
 
@@ -128,6 +134,7 @@ private:
     void UpdateEmotionState(const char* emotion);
     void SetEarFinalPosition();
     void OnStopTimer(TimerHandle_t timer);
+    void OnSingleStopTimer(TimerHandle_t timer);
 
     // 启动策略与软启动
     void SoftStartSingleEar(bool left_ear, ear_action_t action);

@@ -263,11 +263,26 @@ esp_err_t Tc118sEarController::Initialize() {
         return ESP_ERR_NO_MEM;
     }
     
-    // 创建停止定时器
+    // 创建双耳停止定时器
     stop_timer_ = xTimerCreate("EarStopTimer", pdMS_TO_TICKS(100), pdFALSE, this, 
                                [](TimerHandle_t timer) {
                                    Tc118sEarController* controller = static_cast<Tc118sEarController*>(pvTimerGetTimerID(timer));
                                    controller->OnStopTimer(timer);
+                               });
+    // 创建单耳停止定时器（左/右）
+    stop_ctx_left_ = (StopCtx*)pvPortMalloc(sizeof(StopCtx));
+    stop_ctx_right_ = (StopCtx*)pvPortMalloc(sizeof(StopCtx));
+    if (stop_ctx_left_) { stop_ctx_left_->self = this; stop_ctx_left_->left = true; }
+    if (stop_ctx_right_) { stop_ctx_right_->self = this; stop_ctx_right_->left = false; }
+    stop_timer_left_ = xTimerCreate("EarStopL", pdMS_TO_TICKS(100), pdFALSE, stop_ctx_left_, 
+                               [](TimerHandle_t timer) {
+                                   StopCtx* ctx = static_cast<StopCtx*>(pvTimerGetTimerID(timer));
+                                   if (ctx && ctx->self) ctx->self->OnSingleStopTimer(timer);
+                               });
+    stop_timer_right_ = xTimerCreate("EarStopR", pdMS_TO_TICKS(100), pdFALSE, stop_ctx_right_, 
+                               [](TimerHandle_t timer) {
+                                   StopCtx* ctx = static_cast<StopCtx*>(pvTimerGetTimerID(timer));
+                                   if (ctx && ctx->self) ctx->self->OnSingleStopTimer(timer);
                                });
     if (!stop_timer_) {
         ESP_LOGE(TAG, "Failed to create stop timer");
@@ -309,6 +324,18 @@ esp_err_t Tc118sEarController::Deinitialize() {
         xTimerDelete(stop_timer_, portMAX_DELAY);
         stop_timer_ = nullptr;
     }
+    if (stop_timer_left_) {
+        xTimerStop(stop_timer_left_, portMAX_DELAY);
+        xTimerDelete(stop_timer_left_, portMAX_DELAY);
+        stop_timer_left_ = nullptr;
+    }
+    if (stop_timer_right_) {
+        xTimerStop(stop_timer_right_, portMAX_DELAY);
+        xTimerDelete(stop_timer_right_, portMAX_DELAY);
+        stop_timer_right_ = nullptr;
+    }
+    if (stop_ctx_left_) { vPortFree(stop_ctx_left_); stop_ctx_left_ = nullptr; }
+    if (stop_ctx_right_) { vPortFree(stop_ctx_right_); stop_ctx_right_ = nullptr; }
     
     // 删除状态互斥锁
     if (state_mutex_) {
@@ -366,11 +393,17 @@ esp_err_t Tc118sEarController::MoveEar(bool left_ear, ear_action_param_t action)
     // 设置GPIO状态
     SetGpioLevels(left_ear, action.action);
     
-    // 运行指定时间
+    // 运行指定时间（非阻塞：单耳停止定时器控制停止）
     if (action.duration_ms > 0) {
-        vTaskDelay(pdMS_TO_TICKS(action.duration_ms));
-        // 停止动作
-        StopEar(left_ear);
+        TimerHandle_t t = left_ear ? stop_timer_left_ : stop_timer_right_;
+        if (t) {
+            xTimerStop(t, 0);
+            xTimerChangePeriod(t, MS_TO_TICKS_MIN1(action.duration_ms), 0);
+            xTimerStart(t, 0);
+        } else {
+            // 无定时器则直接停止该耳
+            SetGpioLevels(left_ear, EAR_ACTION_STOP);
+        }
     }
     
     return ESP_OK;
@@ -709,9 +742,18 @@ void Tc118sEarController::OnSequenceTimer(TimerHandle_t timer) {
     // 执行当前步骤
     ear_sequence_step_t step = current_sequence_[current_step_index_];
     
-    // 执行组合动作 - 简化版本，直接调用MoveBoth
+    // 执行组合动作 - 改为主循环/Worker上下文执行，避免定时器回调阻塞
     ear_combo_param_t combo = {step.combo_action, step.duration_ms};
-    MoveBoth(combo);
+    // 投递到外设 Worker 执行 GPIO，避免占用主循环
+    Application::PeripheralTask task;
+    task.action = Application::PeripheralAction::kEarSequence;
+    task.combo_action = (int)combo.combo_action;
+    task.duration_ms = combo.duration_ms;
+    auto& app = Application::GetInstance();
+    auto q = app.GetPeripheralTaskQueue();
+    if (q) {
+        xQueueSend(q, &task, 0);
+    }
     
     // 移动到下一步
     current_step_index_++;
@@ -1033,6 +1075,12 @@ void Tc118sEarController::OnStopTimer(TimerHandle_t timer) {
     ESP_LOGI(TAG, "Stop timer triggered - stopping both ears");
     // moving_both_ 在 StopBoth() 中设置，不需要单独设置
     StopBoth();
+}
+
+void Tc118sEarController::OnSingleStopTimer(TimerHandle_t timer) {
+    StopCtx* ctx = static_cast<StopCtx*>(pvTimerGetTimerID(timer));
+    if (!ctx || !ctx->self) return;
+    ctx->self->SetGpioLevels(ctx->left, EAR_ACTION_STOP);
 }
 
 

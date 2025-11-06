@@ -1,4 +1,4 @@
-#include "application.h"
+// 去除对 Application 的直接依赖，通过回调查询 speaking 状态
 #include "audio_service.h"
 #include <esp_log.h>
 #include <cstring>
@@ -115,7 +115,7 @@ void AudioService::Start() {
         AudioService* audio_service = (AudioService*)arg;
         audio_service->OpusCodecTask();
         vTaskDelete(NULL);
-    }, "opus_codec", 2048 * 13, this, 3, &opus_codec_task_handle_);  // 提高优先级到3
+    }, "opus_codec", 2048 * 13, this, 6, &opus_codec_task_handle_);  // 优先级设为6，确保高于主循环，低于输入
 }
 
 void AudioService::Stop() {
@@ -644,8 +644,11 @@ void AudioService::CheckAndUpdateAudioPowerState() {
     if (input_elapsed > AUDIO_POWER_TIMEOUT_MS && codec_->input_enabled()) {
         codec_->EnableInput(false);
     }
-    // speaking 期间抑制或延长自动关断
-    bool is_speaking = (Application::GetInstance().GetDeviceState() == kDeviceStateSpeaking);
+    // speaking 期间抑制或延长自动关断（通过回调查询）
+    bool is_speaking = false;
+    if (is_speaking_query_) {
+        is_speaking = is_speaking_query_();
+    }
     if (codec_->output_enabled()) {
         if (is_speaking) {
             const uint32_t SPEAKING_POWER_TIMEOUT_MS = 60000; // 60s 窗口

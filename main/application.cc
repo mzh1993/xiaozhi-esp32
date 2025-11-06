@@ -515,6 +515,9 @@ void Application::Start() {
                         ESP_LOGI(TAG, "Audio channel reopened successfully for tts start");
                     }
                     
+                    // 刷新输出时间，首包保护
+                    audio_service_.RefreshOutputTime();
+
                     // 强制确保音频输出启用
                     auto codec = Board::GetInstance().GetAudioCodec();
                     if (codec) {

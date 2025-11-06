@@ -1,3 +1,4 @@
+#include "application.h"
 #include "audio_service.h"
 #include <esp_log.h>
 #include <cstring>
@@ -643,8 +644,17 @@ void AudioService::CheckAndUpdateAudioPowerState() {
     if (input_elapsed > AUDIO_POWER_TIMEOUT_MS && codec_->input_enabled()) {
         codec_->EnableInput(false);
     }
-    if (output_elapsed > AUDIO_POWER_TIMEOUT_MS && codec_->output_enabled()) {
-        codec_->EnableOutput(false);
+    // speaking 期间抑制或延长自动关断
+    bool is_speaking = (Application::GetInstance().GetDeviceState() == kDeviceStateSpeaking);
+    if (codec_->output_enabled()) {
+        if (is_speaking) {
+            const uint32_t SPEAKING_POWER_TIMEOUT_MS = 60000; // 60s 窗口
+            if (output_elapsed > SPEAKING_POWER_TIMEOUT_MS) {
+                codec_->EnableOutput(false);
+            }
+        } else if (output_elapsed > AUDIO_POWER_TIMEOUT_MS) {
+            codec_->EnableOutput(false);
+        }
     }
     if (!codec_->input_enabled() && !codec_->output_enabled()) {
         esp_timer_stop(audio_power_timer_);

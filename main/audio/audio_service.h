@@ -160,6 +160,10 @@ private:
     void PushTaskToEncodeQueue(AudioTaskType type, std::vector<int16_t>&& pcm);
     void SetDecodeSampleRate(int sample_rate, int frame_duration);
     void CheckAndUpdateAudioPowerState();
+  // 刷新输出时间戳，用于首包保护/抑制误关断
+  inline void RefreshOutputTime() {
+    last_output_time_ = std::chrono::steady_clock::now();
+  }
 };
 
 #endif

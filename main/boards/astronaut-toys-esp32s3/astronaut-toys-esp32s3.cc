@@ -475,8 +475,10 @@ private:
             // if (display_) {
             //     display_->ShowNotification(action_text);
             // }
-            // 触发耳朵动作和情绪
-            TriggerEarActionForTouch("head", false);
+            // 触发耳朵动作和情绪（通过调度器提交，避免阻塞回调）
+            Application::GetInstance().Schedule([this]() {
+                TriggerEarActionForTouch("head", false);
+            });
             // 使用新的事件接口，发送带有动作描述的文本
             Application::GetInstance().PostTouchEvent(action_text);
         });
@@ -490,8 +492,10 @@ private:
             // if (display_) {
             //     display_->ShowNotification(action_text);
             // }
-            // 触发耳朵动作和情绪
-            TriggerEarActionForTouch("head", true);
+            // 触发耳朵动作和情绪（通过调度器提交，避免阻塞回调）
+            Application::GetInstance().Schedule([this]() {
+                TriggerEarActionForTouch("head", true);
+            });
             // 使用新的事件接口
             Application::GetInstance().PostTouchEvent(action_text);
         });
@@ -505,8 +509,10 @@ private:
             // if (display_) {
             //     display_->ShowNotification(action_text);
             // }
-            // 触发耳朵动作和情绪
-            TriggerEarActionForTouch("nose", false);
+            // 触发耳朵动作和情绪（通过调度器提交，避免阻塞回调）
+            Application::GetInstance().Schedule([this]() {
+                TriggerEarActionForTouch("nose", false);
+            });
             // 使用新的事件接口，发送带有动作描述的文本
             Application::GetInstance().PostTouchEvent(action_text);
         });
@@ -520,8 +526,10 @@ private:
             // if (display_) {
             //     display_->ShowNotification(action_text);
             // }
-            // 触发耳朵动作和情绪
-            TriggerEarActionForTouch("nose", true);
+            // 触发耳朵动作和情绪（通过调度器提交，避免阻塞回调）
+            Application::GetInstance().Schedule([this]() {
+                TriggerEarActionForTouch("nose", true);
+            });
             // 使用新的事件接口
             Application::GetInstance().PostTouchEvent(action_text);
         });
@@ -535,8 +543,10 @@ private:
             // if (display_) {
             //     display_->ShowNotification(action_text);
             // }
-            // 触发耳朵动作和情绪
-            TriggerEarActionForTouch("belly", false);
+            // 触发耳朵动作和情绪（通过调度器提交，避免阻塞回调）
+            Application::GetInstance().Schedule([this]() {
+                TriggerEarActionForTouch("belly", false);
+            });
             // 使用新的事件接口，发送带有动作描述的文本
             Application::GetInstance().PostTouchEvent(action_text);
         });
@@ -550,8 +560,10 @@ private:
             // if (display_) {
             //     display_->ShowNotification(action_text);
             // }
-            // 触发耳朵动作和情绪
-            TriggerEarActionForTouch("belly", true);
+            // 触发耳朵动作和情绪（通过调度器提交，避免阻塞回调）
+            Application::GetInstance().Schedule([this]() {
+                TriggerEarActionForTouch("belly", true);
+            });
             // 使用新的事件接口
             Application::GetInstance().PostTouchEvent(action_text);
         });

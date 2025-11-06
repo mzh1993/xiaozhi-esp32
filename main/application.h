@@ -75,6 +75,8 @@ private:
     std::unique_ptr<Protocol> protocol_;
     EventGroupHandle_t event_group_ = nullptr;
     esp_timer_handle_t clock_timer_handle_ = nullptr;
+    // 触摸超时定时器（非阻塞去监听化）
+    esp_timer_handle_t touch_timeout_timer_ = nullptr;
     volatile DeviceState device_state_ = kDeviceStateUnknown;
     ListeningMode listening_mode_ = kListeningModeAutoStop;
     AecMode aec_mode_ = kAecOff;
@@ -89,6 +91,8 @@ private:
     
     // 音频通道恢复保护：跟踪最后收到 tts start 的时间
     uint64_t last_tts_start_time_ms_ = 0;
+    // 最近一次触摸事件时间，用于判断超时与窗口
+    uint64_t touch_event_time_ms_ = 0;
 
     void OnWakeWordDetected();
     void OnClockTimer();
@@ -99,6 +103,7 @@ private:
 
     void ProcessTouchEvent(const std::string& message);
     void HandleTouchEventInIdleState(const std::string& message);
+    void OnTouchTimeout();
 };
 
 

@@ -60,6 +60,19 @@ Application::Application() {
         .skip_unhandled_events = true
     };
     esp_timer_create(&clock_timer_args, &clock_timer_handle_);
+
+    // 创建触摸超时定时器（用于触摸去监听化的非阻塞超时）
+    esp_timer_create_args_t touch_timeout_timer_args = {
+        .callback = [](void* arg) {
+            Application* app = (Application*)arg;
+            app->OnTouchTimeout();
+        },
+        .arg = this,
+        .dispatch_method = ESP_TIMER_TASK,
+        .name = "touch_timeout",
+        .skip_unhandled_events = true
+    };
+    esp_timer_create(&touch_timeout_timer_args, &touch_timeout_timer_);
 }
 
 Application::~Application() {
@@ -479,6 +492,12 @@ void Application::Start() {
                     
                     // 记录 tts start 时间，用于通道关闭保护
                     last_tts_start_time_ms_ = esp_timer_get_time() / 1000;
+
+                    // 取消触摸超时定时器（若仍在等待）
+                    if (touch_timeout_timer_) {
+                        esp_timer_stop(touch_timeout_timer_);
+                        ESP_LOGI(TAG, "Touch timeout cancelled by tts start");
+                    }
                     
                     // 强制确保音频通道打开（可能在状态切换过程中被关闭）
                     if (!protocol_ || !protocol_->IsAudioChannelOpened()) {
@@ -648,6 +667,34 @@ void Application::OnClockTimer() {
         // SystemInfo::PrintTaskList();
         SystemInfo::PrintHeapStats();
     }
+}
+
+void Application::OnTouchTimeout() {
+    // 在定时器任务上下文，使用主循环串行处理
+    Schedule([this]() {
+        // 若已进入 speaking，忽略超时
+        if (device_state_ == kDeviceStateSpeaking) {
+            ESP_LOGI(TAG, "Touch timeout: already speaking, ignore");
+            return;
+        }
+
+        // 若刚刚收到 tts start（≤1s），再等 1s
+        uint64_t now_ms = esp_timer_get_time() / 1000;
+        bool recent_tts = (last_tts_start_time_ms_ > 0 &&
+                           last_tts_start_time_ms_ >= touch_event_time_ms_ &&
+                           (now_ms - last_tts_start_time_ms_) < 1000);
+        if (recent_tts) {
+            if (touch_timeout_timer_) {
+                esp_timer_start_once(touch_timeout_timer_, 1000000);
+                ESP_LOGI(TAG, "Touch timeout deferred by 1s due to recent tts start");
+            }
+            return;
+        }
+
+        // 超时回退到 listening
+        ESP_LOGW(TAG, "Touch timeout reached, entering listening");
+        SetListeningMode(kListeningModeAutoStop);
+    });
 }
 
 // Add a async task to MainLoop
@@ -1139,17 +1186,16 @@ void Application::HandleTouchEventInIdleState(const std::string& message) {
         return;
     }
 
-    // 3. 先切换到监听状态以启用音频处理（参考唤醒词流程）
-    ESP_LOGI(TAG, "Switching to Listening state to enable audio processing");
-    ESP_LOGI(TAG, "About to call SetListeningMode(kListeningModeAutoStop)");
-    SetListeningMode(kListeningModeAutoStop);
-    ESP_LOGI(TAG, "SetListeningMode(kListeningModeAutoStop) completed");
-    
-    // 4. 不再使用vTaskDelay阻塞主循环
-    // 服务器返回tts start消息后会自动切换到speaking状态
-    // 如果服务器没有响应，SetListeningMode已经设置了自动停止模式，会自动处理
-    
-    // 5. 确保音频通道仍然打开（可能在状态切换过程中被关闭）
+    // 3. 不立即进入 listening，等待服务器 tts start（去监听化）
+    // 启动触摸超时定时器（3秒），超时回退到 listening
+    touch_event_time_ms_ = esp_timer_get_time() / 1000;
+    if (touch_timeout_timer_) {
+        esp_timer_stop(touch_timeout_timer_);
+        esp_timer_start_once(touch_timeout_timer_, 3000000);
+        ESP_LOGI(TAG, "Touch timeout timer started (3s)");
+    }
+
+    // 4. 确保音频通道仍然打开（可能在状态切换过程中被关闭）
     if (!protocol_ || !protocol_->IsAudioChannelOpened()) {
         ESP_LOGW(TAG, "Audio channel closed unexpectedly during touch event processing");
         SetDeviceState(kDeviceStateConnecting);
@@ -1160,7 +1206,7 @@ void Application::HandleTouchEventInIdleState(const std::string& message) {
         }
     }
     
-    // 6. 确保音频输出启用（解决音频输出被禁用的问题）
+    // 5. 确保音频输出启用（为首包做准备）
     auto codec = Board::GetInstance().GetAudioCodec();
     if (codec) {
         ESP_LOGI(TAG, "Ensuring audio output is enabled for touch event");

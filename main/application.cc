@@ -73,12 +73,53 @@ Application::Application() {
         .skip_unhandled_events = true
     };
     esp_timer_create(&touch_timeout_timer_args, &touch_timeout_timer_);
+
+    // 创建触摸重试定时器
+    esp_timer_create_args_t touch_retry_timer_args = {
+        .callback = [](void* arg) {
+            Application* app = (Application*)arg;
+            app->OnTouchRetry();
+        },
+        .arg = this,
+        .dispatch_method = ESP_TIMER_TASK,
+        .name = "touch_retry",
+        .skip_unhandled_events = true
+    };
+    esp_timer_create(&touch_retry_timer_args, &touch_retry_timer_);
+
+    // speaking中断后延迟处理触摸
+    esp_timer_create_args_t abort_delay_timer_args = {
+        .callback = [](void* arg) {
+            Application* app = (Application*)arg;
+            app->OnAbortDelay();
+        },
+        .arg = this,
+        .dispatch_method = ESP_TIMER_TASK,
+        .name = "abort_delay",
+        .skip_unhandled_events = true
+    };
+    esp_timer_create(&abort_delay_timer_args, &abort_delay_timer_);
 }
 
 Application::~Application() {
     if (clock_timer_handle_ != nullptr) {
         esp_timer_stop(clock_timer_handle_);
         esp_timer_delete(clock_timer_handle_);
+    }
+    if (touch_timeout_timer_ != nullptr) {
+        esp_timer_stop(touch_timeout_timer_);
+        esp_timer_delete(touch_timeout_timer_);
+        touch_timeout_timer_ = nullptr;
+    }
+    if (touch_retry_timer_ != nullptr) {
+        esp_timer_stop(touch_retry_timer_);
+        esp_timer_delete(touch_retry_timer_);
+        touch_retry_timer_ = nullptr;
+    }
+    if (abort_delay_timer_ != nullptr) {
+        esp_timer_stop(abort_delay_timer_);
+        esp_timer_delete(abort_delay_timer_);
+        abort_delay_timer_ = nullptr;
     }
     vEventGroupDelete(event_group_);
 }
@@ -498,6 +539,18 @@ void Application::Start() {
                         esp_timer_stop(touch_timeout_timer_);
                         ESP_LOGI(TAG, "Touch timeout cancelled by tts start");
                     }
+
+                    // 重置触摸重试状态
+                    touch_retry_attempt_ = 0;
+                    pending_touch_message_.clear();
+                    if (touch_retry_timer_) {
+                        esp_timer_stop(touch_retry_timer_);
+                    }
+                    // 取消speaking中断延迟处理（如仍在排队）
+                    abort_delay_message_.clear();
+                    if (abort_delay_timer_) {
+                        esp_timer_stop(abort_delay_timer_);
+                    }
                     
                     // 强制确保音频通道打开（可能在状态切换过程中被关闭）
                     if (!protocol_ || !protocol_->IsAudioChannelOpened()) {
@@ -698,6 +751,33 @@ void Application::OnTouchTimeout() {
         ESP_LOGW(TAG, "Touch timeout reached, entering listening");
         SetListeningMode(kListeningModeAutoStop);
     });
+}
+
+void Application::OnTouchRetry() {
+    // 若超过最大重试次数，放弃
+    if (touch_retry_attempt_ >= 5) {
+        ESP_LOGW(TAG, "Touch retry exceeded max attempts, dropping: %s", pending_touch_message_.c_str());
+        touch_retry_attempt_ = 0;
+        pending_touch_message_.clear();
+        return;
+    }
+    std::string message = pending_touch_message_;
+    if (message.empty()) {
+        return;
+    }
+    Schedule([this, message]() {
+        ESP_LOGI(TAG, "Retrying touch event: %s", message.c_str());
+        ProcessTouchEvent(message);
+    });
+}
+
+void Application::OnAbortDelay() {
+    std::string message = abort_delay_message_;
+    if (message.empty()) return;
+    Schedule([this, message]() {
+        HandleTouchEventInIdleState(message);
+    });
+    abort_delay_message_.clear();
 }
 
 // Add a async task to MainLoop
@@ -1119,19 +1199,21 @@ void Application::ProcessTouchEvent(const std::string& message) {
             // 说话状态：中止当前语音，然后处理触摸事件
             ESP_LOGI(TAG, "Device speaking, aborting speech for touch event");
             AbortSpeaking(kAbortReasonNone);
-            // 等待中止完成后再处理触摸事件
-            Schedule([this, message]() {
-                HandleTouchEventInIdleState(message);
-            });
+            // 等待中止完成后再处理触摸事件（非阻塞延迟 ~150ms）
+            abort_delay_message_ = message;
+            if (abort_delay_timer_) {
+                esp_timer_stop(abort_delay_timer_);
+                esp_timer_start_once(abort_delay_timer_, 150000);
+            }
             break;
             
         case kDeviceStateListening:
             // 监听状态：停止监听，然后处理触摸事件
             ESP_LOGI(TAG, "Device listening, stopping listening for touch event");
-            protocol_->SendStopListening();
-            SetDeviceState(kDeviceStateIdle);
-            // 等待状态转换完成后再处理触摸事件
+            // 同闭包执行，避免跨 tick 抖动
             Schedule([this, message]() {
+                protocol_->SendStopListening();
+                SetDeviceState(kDeviceStateIdle);
                 HandleTouchEventInIdleState(message);
             });
             break;
@@ -1139,17 +1221,30 @@ void Application::ProcessTouchEvent(const std::string& message) {
         case kDeviceStateConnecting:
             // 连接状态：等待连接完成后再处理触摸事件
             ESP_LOGI(TAG, "Device connecting, waiting for connection completion");
-            Schedule([this, message]() {
-                ProcessTouchEvent(message);
-            });
+            // 退避重试：50,100,200,400,800ms，最多5次
+            pending_touch_message_ = message;
+            touch_retry_attempt_ = std::min(touch_retry_attempt_ + 1, 5);
+            if (touch_retry_timer_) {
+                uint64_t delay_ms = 50u << (touch_retry_attempt_ - 1);
+                if (delay_ms > 800) delay_ms = 800;
+                esp_timer_stop(touch_retry_timer_);
+                esp_timer_start_once(touch_retry_timer_, delay_ms * 1000);
+                ESP_LOGI(TAG, "Scheduled touch retry in %llu ms (attempt %d)", (unsigned long long)delay_ms, touch_retry_attempt_);
+            }
             break;
             
         default:
             // 其他状态：等待回到空闲状态后再处理
             ESP_LOGW(TAG, "Device in state %s, waiting for idle state", STATE_STRINGS[device_state_]);
-            Schedule([this, message]() {
-                ProcessTouchEvent(message);
-            });
+            // 统一复用重试逻辑
+            pending_touch_message_ = message;
+            touch_retry_attempt_ = std::min(touch_retry_attempt_ + 1, 5);
+            if (touch_retry_timer_) {
+                uint64_t delay_ms = 50u << (touch_retry_attempt_ - 1);
+                if (delay_ms > 800) delay_ms = 800;
+                esp_timer_stop(touch_retry_timer_);
+                esp_timer_start_once(touch_retry_timer_, delay_ms * 1000);
+            }
             break;
     }
 }

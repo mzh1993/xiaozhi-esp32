@@ -93,6 +93,13 @@ private:
     uint64_t last_tts_start_time_ms_ = 0;
     // 最近一次触摸事件时间，用于判断超时与窗口
     uint64_t touch_event_time_ms_ = 0;
+    // 触摸重试：一次简单重试通道
+    esp_timer_handle_t touch_retry_timer_ = nullptr;
+    std::string pending_touch_message_;
+    int touch_retry_attempt_ = 0;
+    // speaking中断后延迟处理触摸
+    esp_timer_handle_t abort_delay_timer_ = nullptr;
+    std::string abort_delay_message_;
 
     void OnWakeWordDetected();
     void OnClockTimer();
@@ -104,6 +111,8 @@ private:
     void ProcessTouchEvent(const std::string& message);
     void HandleTouchEventInIdleState(const std::string& message);
     void OnTouchTimeout();
+    void OnTouchRetry();
+    void OnAbortDelay();
 };
 
 

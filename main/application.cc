@@ -587,6 +587,13 @@ void Application::Start() {
                     if (abort_delay_timer_) {
                         esp_timer_stop(abort_delay_timer_);
                     }
+                    // 重置连续超时计数（tts start成功，说明网络正常）
+                    consecutive_touch_timeouts_ = 0;
+                    // 如果保护模式还在，但tts start成功，可以提前退出保护模式
+                    if (direct_speaking_protection_mode_) {
+                        direct_speaking_protection_mode_ = false;
+                        ESP_LOGI(TAG, "Direct speaking protection mode disabled (tts start received)");
+                    }
                     
                     // 强制确保音频通道打开（可能在状态切换过程中被关闭）
                     if (!protocol_ || !protocol_->IsAudioChannelOpened()) {
@@ -799,6 +806,17 @@ void Application::OnTouchTimeout() {
 
         // 超时回退到 listening
         ESP_LOGW(TAG, "Touch timeout reached, entering listening");
+        consecutive_touch_timeouts_++;
+        ESP_LOGW(TAG, "Consecutive touch timeouts: %d", consecutive_touch_timeouts_);
+        
+        // 连续2-3次超时后启用保护模式（跳过listen+start，直接speaking保护）
+        if (consecutive_touch_timeouts_ >= 2 && !direct_speaking_protection_mode_) {
+            direct_speaking_protection_mode_ = true;
+            uint64_t now_ms = esp_timer_get_time() / 1000;
+            protection_mode_until_ms_ = now_ms + 60000; // 保护模式持续60秒
+            ESP_LOGW(TAG, "Direct speaking protection mode enabled (60s)");
+        }
+        
         SetListeningMode(kListeningModeAutoStop);
         // 回退后复位重试状态
         touch_retry_attempt_ = 0;
@@ -1397,7 +1415,24 @@ void Application::HandleTouchEventInIdleState(const std::string& message) {
         return;
     }
 
-    // 3. 不立即进入 listening，等待服务器 tts start（去监听化）
+    // 3. 检查是否启用保护模式（连续超时后跳过listen+start）
+    uint64_t now_ms = esp_timer_get_time() / 1000;
+    bool in_protection = (direct_speaking_protection_mode_ && 
+                          now_ms < protection_mode_until_ms_);
+    
+    if (in_protection) {
+        // 保护模式：直接进入speaking保护，不等待tts start
+        ESP_LOGW(TAG, "Direct speaking protection mode: skipping listen+start");
+        SetDeviceState(kDeviceStateSpeaking);
+        audio_service_.RefreshOutputTime();
+        auto codec = Board::GetInstance().GetAudioCodec();
+        if (codec) {
+            codec->EnableOutput(true);
+        }
+        return;
+    }
+    
+    // 正常流程：不立即进入 listening，等待服务器 tts start（去监听化）
     // 启动触摸超时定时器（3秒），超时回退到 listening
     touch_event_time_ms_ = esp_timer_get_time() / 1000;
     if (touch_timeout_timer_) {

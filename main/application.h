@@ -104,6 +104,10 @@ private:
     uint64_t last_touch_post_time_ms_ = 0;
     std::string last_processed_touch_message_;
     uint64_t last_processed_touch_time_ms_ = 0;
+    // 连续超时保护模式
+    int consecutive_touch_timeouts_ = 0;
+    bool direct_speaking_protection_mode_ = false;
+    uint64_t protection_mode_until_ms_ = 0;
     // 首包监控
     bool first_packet_monitoring_ = false;
     uint64_t first_packet_arrival_time_ms_ = 0;

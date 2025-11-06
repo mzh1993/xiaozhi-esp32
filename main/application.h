@@ -82,6 +82,7 @@ private:
     esp_timer_handle_t clock_timer_handle_ = nullptr;
     // 触摸超时定时器（非阻塞去监听化）
     esp_timer_handle_t touch_timeout_timer_ = nullptr;
+    esp_timer_handle_t touch_debounce_timer_ = nullptr;
     volatile DeviceState device_state_ = kDeviceStateUnknown;
     ListeningMode listening_mode_ = kListeningModeAutoStop;
     AecMode aec_mode_ = kAecOff;
@@ -98,6 +99,11 @@ private:
     uint64_t last_tts_start_time_ms_ = 0;
     // 最近一次触摸事件时间，用于判断超时与窗口
     uint64_t touch_event_time_ms_ = 0;
+    // 触摸去抖与合并
+    std::string debounced_touch_message_;
+    uint64_t last_touch_post_time_ms_ = 0;
+    std::string last_processed_touch_message_;
+    uint64_t last_processed_touch_time_ms_ = 0;
     // 首包监控
     bool first_packet_monitoring_ = false;
     uint64_t first_packet_arrival_time_ms_ = 0;
@@ -135,6 +141,7 @@ private:
     void OnTouchTimeout();
     void OnTouchRetry();
     void OnAbortDelay();
+    void OnTouchDebounce();
     void PeripheralWorkerTask();
 };
 

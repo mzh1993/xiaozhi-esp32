@@ -74,6 +74,19 @@ Application::Application() {
     };
     esp_timer_create(&touch_timeout_timer_args, &touch_timeout_timer_);
 
+    // 创建触摸去抖定时器（合并快速连续触摸）
+    esp_timer_create_args_t touch_debounce_timer_args = {
+        .callback = [](void* arg) {
+            Application* app = (Application*)arg;
+            app->OnTouchDebounce();
+        },
+        .arg = this,
+        .dispatch_method = ESP_TIMER_TASK,
+        .name = "touch_debounce",
+        .skip_unhandled_events = true
+    };
+    esp_timer_create(&touch_debounce_timer_args, &touch_debounce_timer_);
+
     // 创建触摸重试定时器
     esp_timer_create_args_t touch_retry_timer_args = {
         .callback = [](void* arg) {
@@ -120,6 +133,11 @@ Application::~Application() {
         esp_timer_stop(abort_delay_timer_);
         esp_timer_delete(abort_delay_timer_);
         abort_delay_timer_ = nullptr;
+    }
+    if (touch_debounce_timer_ != nullptr) {
+        esp_timer_stop(touch_debounce_timer_);
+        esp_timer_delete(touch_debounce_timer_);
+        touch_debounce_timer_ = nullptr;
     }
     vEventGroupDelete(event_group_);
 }
@@ -816,6 +834,24 @@ void Application::OnAbortDelay() {
     abort_delay_message_.clear();
 }
 
+void Application::OnTouchDebounce() {
+    std::string message = debounced_touch_message_;
+    if (message.empty()) return;
+    // 若与上次处理的触摸在200ms窗口内且相同，丢弃
+    uint64_t now_ms = esp_timer_get_time() / 1000;
+    if (!last_processed_touch_message_.empty() &&
+        message == last_processed_touch_message_ &&
+        (now_ms - last_processed_touch_time_ms_) <= 200) {
+        ESP_LOGI(TAG, "Debounced duplicate touch: %s", message.c_str());
+        return;
+    }
+    Schedule([this, message]() {
+        last_processed_touch_message_ = message;
+        last_processed_touch_time_ms_ = esp_timer_get_time() / 1000;
+        ProcessTouchEvent(message);
+    });
+}
+
 void Application::SchedulePeripheralEmotion(const std::string& emotion) {
     if (peripheral_task_queue_ == nullptr) return;
     PeripheralTask task{PeripheralAction::kEarEmotion, emotion};
@@ -1234,11 +1270,13 @@ void Application::HandleVoiceCommand(const std::string& command) {
  */
 void Application::PostTouchEvent(const std::string& message) {
     ESP_LOGI(TAG, "Touch event posted: %s", message.c_str());
-    
-    // 通过Schedule放入主循环，确保状态一致性
-    Schedule([this, message]() {
-        ProcessTouchEvent(message);
-    });
+    // 去抖与合并：200ms 窗口合并最后一次触摸
+    debounced_touch_message_ = message;
+    last_touch_post_time_ms_ = esp_timer_get_time() / 1000;
+    if (touch_debounce_timer_) {
+        esp_timer_stop(touch_debounce_timer_);
+        esp_timer_start_once(touch_debounce_timer_, 200000); // 200ms
+    }
 }
 
 /**

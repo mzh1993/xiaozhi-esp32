@@ -5,6 +5,7 @@
 #include "esp_timer.h"
 #include <string.h>
 #include <cinttypes>
+#include <memory>
 
 static const char *TAG = "TC118S_EAR_CONTROLLER";
 
@@ -200,7 +201,9 @@ Tc118sEarController::Tc118sEarController(gpio_num_t left_ina_pin, gpio_num_t lef
     , current_emotion_("neutral")
     , last_emotion_time_(0)
     , emotion_action_active_(false)
-    , stop_timer_(nullptr) {
+    , stop_timer_(nullptr)
+    , current_combo_action_(EAR_COMBO_BOTH_STOP)
+    , last_combo_start_time_ms_(0) {
     
     ESP_LOGI(TAG, "TC118S Ear Controller created with pins: L_INA=%d, L_INB=%d, R_INA=%d, R_INB=%d",
              left_ina_pin_, left_inb_pin_, right_ina_pin_, right_inb_pin_);
@@ -417,13 +420,11 @@ esp_err_t Tc118sEarController::StopEar(bool left_ear) {
 }
 
 esp_err_t Tc118sEarController::StopBoth() {
-    if (state_mutex_) {
-        xSemaphoreTake(state_mutex_, portMAX_DELAY);
-        moving_both_ = false;
-        xSemaphoreGive(state_mutex_);
-    } else {
-        moving_both_ = false;
+    if (stop_timer_) {
+        xTimerStop(stop_timer_, 0);
     }
+    ResetComboState();
+    Application::GetInstance().CancelEarComboStopTimer();
     StopEar(true);
     StopEar(false);
     return ESP_OK;
@@ -444,51 +445,62 @@ esp_err_t Tc118sEarController::MoveBoth(ear_combo_param_t combo) {
     
     // 保护状态变量访问
     bool is_moving = false;
+    ear_combo_action_t previous_action = EAR_COMBO_BOTH_STOP;
+    uint64_t previous_start_time_ms = 0;
     if (state_mutex_) {
         xSemaphoreTake(state_mutex_, portMAX_DELAY);
         is_moving = moving_both_;
+        previous_action = current_combo_action_;
+        previous_start_time_ms = last_combo_start_time_ms_;
         xSemaphoreGive(state_mutex_);
     } else {
         is_moving = moving_both_;
+        previous_action = current_combo_action_;
+        previous_start_time_ms = last_combo_start_time_ms_;
     }
     
-    if (is_moving) {
-        ESP_LOGD(TAG, "MoveBoth re-entry: refresh timer only, duration=%lu ms", duration_ms);
-        if (stop_timer_) {
-            xTimerStop(stop_timer_, 0);
-            xTimerChangePeriod(stop_timer_, MS_TO_TICKS_MIN1(duration_ms), 0);
-            xTimerStart(stop_timer_, 0);
-        }
+    if (combo.combo_action == EAR_COMBO_BOTH_STOP) {
+        ESP_LOGI(TAG, "MoveBoth received STOP action");
+        StopBoth();
         return ESP_OK;
     }
 
-    if ((now_ms - last_move_tick_ms_) < EAR_MOVE_COOLDOWN_MS) {
-        ESP_LOGD(TAG, "MoveBoth cooldown: refresh timer only, duration=%lu ms", duration_ms);
+    if ((now_ms - last_move_tick_ms_) < EAR_MOVE_COOLDOWN_MS &&
+        combo.combo_action == previous_action) {
+        ESP_LOGD(TAG, "MoveBoth cooldown: combo=%d, extending duration=%lu ms",
+                 combo.combo_action, duration_ms);
+        ScheduleComboStop(duration_ms);
+        return ESP_OK;
+    }
+
+    bool same_action = is_moving && (previous_action == combo.combo_action);
+    if (same_action) {
+        ESP_LOGD(TAG, "MoveBoth re-entry with same action=%d, duration=%lu ms",
+                 combo.combo_action, duration_ms);
+    } else if (is_moving) {
+        ESP_LOGI(TAG, "MoveBoth action change: %d -> %d", previous_action, combo.combo_action);
+        // 动作变化时，先停止当前动作的GPIO，避免快速反转
+        // 注意：这里只停止GPIO，不调用StopBoth()（因为StopBoth会重置状态）
+        SetGpioLevels(true, EAR_ACTION_STOP);
+        SetGpioLevels(false, EAR_ACTION_STOP);
+        // 取消之前的停止定时器
+        auto& app = Application::GetInstance();
+        app.CancelEarComboStopTimer();
         if (stop_timer_) {
             xTimerStop(stop_timer_, 0);
-            xTimerChangePeriod(stop_timer_, MS_TO_TICKS_MIN1(duration_ms), 0);
-            xTimerStart(stop_timer_, 0);
         }
-        return ESP_OK;
     }
 
     last_move_tick_ms_ = now_ms;
-    if (state_mutex_) {
-        xSemaphoreTake(state_mutex_, portMAX_DELAY);
-        moving_both_ = true;
-        xSemaphoreGive(state_mutex_);
-    } else {
-        moving_both_ = true;
-    }
 
     ESP_LOGI(TAG, "Moving both ears: combo=%d, duration=%lu ms", 
              combo.combo_action, duration_ms);
     
-    // 根据组合动作类型设置双耳GPIO状态（对双耳同时动作引入错峰启动）
+    // 根据组合动作类型设置双耳GPIO状态（移除阻塞性错峰启动）
     switch (combo.combo_action) {
         case EAR_COMBO_BOTH_FORWARD:
         case EAR_COMBO_BOTH_BACKWARD:
-            // 异步错峰启动，避免在定时器任务内阻塞
+            // 非阻塞启动：双耳同时启动，不阻塞Worker Task
             StartBothWithStagger(combo.combo_action, combo.duration_ms);
             break;
             
@@ -517,18 +529,12 @@ esp_err_t Tc118sEarController::MoveBoth(ear_combo_param_t combo) {
             return ESP_ERR_INVALID_ARG;
     }
     
-    // 运行指定时间 - 非阻塞实现
-    if (duration_ms > 0) {
-        // 启动定时器来在指定时间后停止耳朵
-        if (stop_timer_) {
-            xTimerStop(stop_timer_, 0);
-            xTimerChangePeriod(stop_timer_, MS_TO_TICKS_MIN1(duration_ms), 0);
-            xTimerStart(stop_timer_, 0);
-        } else {
-            // 如果没有定时器，直接停止（避免阻塞）
-            StopBoth();
-        }
-    }
+    uint64_t action_start_time_ms = same_action && previous_start_time_ms != 0
+        ? previous_start_time_ms
+        : now_ms;
+    UpdateComboState(true, combo.combo_action, action_start_time_ms);
+
+    ScheduleComboStop(duration_ms);
     
     return ESP_OK;
 }
@@ -747,14 +753,14 @@ void Tc118sEarController::OnSequenceTimer(TimerHandle_t timer) {
     // 执行组合动作 - 改为主循环/Worker上下文执行，避免定时器回调阻塞
     ear_combo_param_t combo = {step.combo_action, step.duration_ms};
     // 投递到外设 Worker 执行 GPIO，避免占用主循环
-    Application::PeripheralTask task;
-    task.action = Application::PeripheralAction::kEarSequence;
-    task.combo_action = (int)combo.combo_action;
-    task.duration_ms = combo.duration_ms;
     auto& app = Application::GetInstance();
-    auto q = app.GetPeripheralTaskQueue();
-    if (q) {
-        xQueueSend(q, &task, 0);
+    auto task = std::make_unique<Application::PeripheralTask>();
+    task->action = Application::PeripheralAction::kEarSequence;
+    task->combo_action = static_cast<int>(combo.combo_action);
+    task->duration_ms = combo.duration_ms;
+    task->source = Application::PeripheralTaskSource::kSequence;
+    if (!app.EnqueuePeripheralTask(std::move(task))) {
+        ESP_LOGW(TAG, "Failed to enqueue ear sequence task, combo=%d", static_cast<int>(combo.combo_action));
     }
     
     // 移动到下一步
@@ -1085,6 +1091,46 @@ void Tc118sEarController::OnSingleStopTimer(TimerHandle_t timer) {
     ctx->self->SetGpioLevels(ctx->left, EAR_ACTION_STOP);
 }
 
+void Tc118sEarController::UpdateComboState(bool moving, ear_combo_action_t action, uint64_t timestamp_ms) {
+    auto apply = [this, moving, action, timestamp_ms]() {
+        moving_both_ = moving;
+        current_combo_action_ = moving ? action : EAR_COMBO_BOTH_STOP;
+        last_combo_start_time_ms_ = moving ? timestamp_ms : 0;
+    };
+
+    if (state_mutex_) {
+        xSemaphoreTake(state_mutex_, portMAX_DELAY);
+        apply();
+        xSemaphoreGive(state_mutex_);
+    } else {
+        apply();
+    }
+}
+
+void Tc118sEarController::ResetComboState() {
+    UpdateComboState(false, EAR_COMBO_BOTH_STOP, 0);
+}
+
+void Tc118sEarController::ScheduleComboStop(uint32_t duration_ms) {
+    if (duration_ms == 0) {
+        return;
+    }
+
+    auto& app = Application::GetInstance();
+    if (app.ScheduleEarComboStop(duration_ms)) {
+        return;
+    }
+
+    if (stop_timer_) {
+        xTimerStop(stop_timer_, 0);
+        xTimerChangePeriod(stop_timer_, MS_TO_TICKS_MIN1(duration_ms), 0);
+        xTimerStart(stop_timer_, 0);
+        return;
+    }
+
+    StopBoth();
+}
+
 
 // ===== 启动策略实现 =====
 void Tc118sEarController::SoftStartSingleEar(bool left_ear, ear_action_t action) {
@@ -1096,67 +1142,24 @@ void Tc118sEarController::SoftStartSingleEar(bool left_ear, ear_action_t action)
 }
 
 void Tc118sEarController::StartBothWithStagger(ear_combo_action_t combo_action, uint32_t duration_ms) {
-    // 在独立任务中执行，避免阻塞定时器服务任务
-    struct StaggerCtx {
-        Tc118sEarController* self;
-        ear_combo_action_t action;
-        uint32_t duration_ms;
-    };
+    (void)duration_ms;
 
-    auto task_fn = [](void* arg) {
-        auto* ctx = static_cast<StaggerCtx*>(arg);
-
-        Tc118sEarController* self = ctx->self;
-        ear_combo_action_t action = ctx->action;
-        // duration_ms 由上层定时器控制，不在此任务内处理停止
-
-        // 左耳先行，再错峰右耳
-        if (action == EAR_COMBO_BOTH_FORWARD) {
-            self->SoftStartSingleEar(true, EAR_ACTION_FORWARD);
-            if (EAR_START_STAGGER_MS > 0) {
-                vTaskDelay(MS_TO_TICKS_MIN1(EAR_START_STAGGER_MS));
-            }
-            self->SoftStartSingleEar(false, EAR_ACTION_FORWARD);
-        } else if (action == EAR_COMBO_BOTH_BACKWARD) {
-            self->SoftStartSingleEar(true, EAR_ACTION_BACKWARD);
-            if (EAR_START_STAGGER_MS > 0) {
-                vTaskDelay(MS_TO_TICKS_MIN1(EAR_START_STAGGER_MS));
-            }
-            self->SoftStartSingleEar(false, EAR_ACTION_BACKWARD);
-        }
-
-        vPortFree(ctx);
-        vTaskDelete(nullptr);
-    };
-
-    auto* payload = (StaggerCtx*)pvPortMalloc(sizeof(StaggerCtx));
-    if (!payload) {
-        ESP_LOGW(TAG, "StartBothWithStagger: alloc failed, fallback to simultaneous start");
-        // 退化为同时启动
-        if (combo_action == EAR_COMBO_BOTH_FORWARD) {
-            SetGpioLevels(true, EAR_ACTION_FORWARD);
-            SetGpioLevels(false, EAR_ACTION_FORWARD);
-        } else if (combo_action == EAR_COMBO_BOTH_BACKWARD) {
-            SetGpioLevels(true, EAR_ACTION_BACKWARD);
-            SetGpioLevels(false, EAR_ACTION_BACKWARD);
-        }
-        return;
-    }
-    payload->self = this;
-    payload->action = combo_action;
-    payload->duration_ms = duration_ms;
-
-    BaseType_t ok = xTaskCreate(task_fn, "ear_stagger_start", 2048, payload, 5, nullptr);
-    if (ok != pdPASS) {
-        ESP_LOGW(TAG, "StartBothWithStagger: task create failed, fallback to simultaneous start");
-        vPortFree(payload);
-        if (combo_action == EAR_COMBO_BOTH_FORWARD) {
-            SetGpioLevels(true, EAR_ACTION_FORWARD);
-            SetGpioLevels(false, EAR_ACTION_FORWARD);
-        } else if (combo_action == EAR_COMBO_BOTH_BACKWARD) {
-            SetGpioLevels(true, EAR_ACTION_BACKWARD);
-            SetGpioLevels(false, EAR_ACTION_BACKWARD);
-        }
+    // 修改：移除vTaskDelay阻塞，改为直接同时启动双耳
+    // 错峰逻辑如果硬件确实需要，可以通过PWM软启动实现，但不在Worker Task中阻塞
+    switch (combo_action) {
+        case EAR_COMBO_BOTH_FORWARD:
+            SoftStartSingleEar(true, EAR_ACTION_FORWARD);
+            // 移除阻塞：双耳同时启动，避免阻塞Worker Task
+            SoftStartSingleEar(false, EAR_ACTION_FORWARD);
+            break;
+        case EAR_COMBO_BOTH_BACKWARD:
+            SoftStartSingleEar(true, EAR_ACTION_BACKWARD);
+            // 移除阻塞：双耳同时启动，避免阻塞Worker Task
+            SoftStartSingleEar(false, EAR_ACTION_BACKWARD);
+            break;
+        default:
+            ESP_LOGW(TAG, "StartBothWithStagger: unexpected combo_action=%d", combo_action);
+            break;
     }
 }
 

@@ -143,11 +143,16 @@ private:
     // 延迟位置设置（避免阻塞定时器回调）
     void ScheduleEarFinalPosition();
 
-
     // 并发控制
     SemaphoreHandle_t state_mutex_ = nullptr;
     volatile bool moving_both_ = false;
+    ear_combo_action_t current_combo_action_ = EAR_COMBO_BOTH_STOP;
+    uint64_t last_combo_start_time_ms_ = 0;
     uint64_t last_move_tick_ms_ = 0;
+
+    void UpdateComboState(bool moving, ear_combo_action_t action, uint64_t timestamp_ms);
+    void ResetComboState();
+    void ScheduleComboStop(uint32_t duration_ms);
 
     // 默认情绪序列定义 - 基于时间控制的情绪表达
     static const ear_sequence_step_t happy_sequence_[];

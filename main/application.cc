@@ -12,6 +12,7 @@
 #include "settings.h"
 
 #include <cstring>
+#include <memory>
 #include <cinttypes>
 #include <esp_log.h>
 #include <cJSON.h>
@@ -113,6 +114,32 @@ Application::Application() {
         .skip_unhandled_events = true
     };
     esp_timer_create(&abort_delay_timer_args, &abort_delay_timer_);
+
+    // 外设任务重试定时器
+    esp_timer_create_args_t peripheral_retry_timer_args = {
+        .callback = [](void* arg) {
+            Application* app = static_cast<Application*>(arg);
+            app->OnPeripheralRetry();
+        },
+        .arg = this,
+        .dispatch_method = ESP_TIMER_TASK,
+        .name = "peripheral_retry",
+        .skip_unhandled_events = true
+    };
+    esp_timer_create(&peripheral_retry_timer_args, &peripheral_retry_timer_);
+
+    // 耳朵组合动作停止定时器
+    esp_timer_create_args_t ear_combo_stop_timer_args = {
+        .callback = [](void* arg) {
+            Application* app = static_cast<Application*>(arg);
+            app->OnEarComboStopTimeout();
+        },
+        .arg = this,
+        .dispatch_method = ESP_TIMER_TASK,
+        .name = "ear_combo_stop",
+        .skip_unhandled_events = true
+    };
+    esp_timer_create(&ear_combo_stop_timer_args, &ear_combo_stop_timer_);
 }
 
 Application::~Application() {
@@ -139,6 +166,16 @@ Application::~Application() {
         esp_timer_stop(touch_debounce_timer_);
         esp_timer_delete(touch_debounce_timer_);
         touch_debounce_timer_ = nullptr;
+    }
+    if (peripheral_retry_timer_ != nullptr) {
+        esp_timer_stop(peripheral_retry_timer_);
+        esp_timer_delete(peripheral_retry_timer_);
+        peripheral_retry_timer_ = nullptr;
+    }
+    if (ear_combo_stop_timer_ != nullptr) {
+        esp_timer_stop(ear_combo_stop_timer_);
+        esp_timer_delete(ear_combo_stop_timer_);
+        ear_combo_stop_timer_ = nullptr;
     }
     vEventGroupDelete(event_group_);
 }
@@ -768,7 +805,8 @@ void Application::Start() {
 
     // 创建外设 Worker（队列 + 任务）
     if (peripheral_task_queue_ == nullptr) {
-        peripheral_task_queue_ = xQueueCreate(16, sizeof(PeripheralTask));
+        peripheral_queue_length_ = 16;
+        peripheral_task_queue_ = xQueueCreate(peripheral_queue_length_, sizeof(PeripheralTask*));
     }
     if (peripheral_worker_task_handle_ == nullptr && peripheral_task_queue_ != nullptr) {
         xTaskCreate([](void* arg){
@@ -788,6 +826,14 @@ void Application::OnClockTimer() {
         // SystemInfo::PrintTaskCpuUsage(pdMS_TO_TICKS(1000));
         // SystemInfo::PrintTaskList();
         SystemInfo::PrintHeapStats();
+        if (peripheral_task_queue_ != nullptr && peripheral_queue_length_ > 0) {
+            size_t current_usage = GetPeripheralQueueUsage();
+            ESP_LOGI(TAG, "Peripheral queue usage: %zu/%u, max=%zu, retry=%u, drop=%u",
+                current_usage, peripheral_queue_length_,
+                peripheral_queue_max_usage_.load(),
+                peripheral_queue_retry_count_.load(),
+                peripheral_queue_drop_count_.load());
+        }
     }
 }
 
@@ -883,38 +929,139 @@ void Application::OnTouchDebounce() {
     });
 }
 
+size_t Application::GetPeripheralQueueUsage() const {
+    if (peripheral_task_queue_ == nullptr || peripheral_queue_length_ == 0) {
+        return 0;
+    }
+    UBaseType_t spaces = uxQueueSpacesAvailable(peripheral_task_queue_);
+    if (spaces > peripheral_queue_length_) {
+        return 0;
+    }
+    return static_cast<size_t>(peripheral_queue_length_ - spaces);
+}
+
+void Application::SchedulePeripheralRetry(uint32_t delay_us) {
+    if (peripheral_retry_timer_ == nullptr) {
+        return;
+    }
+    esp_timer_stop(peripheral_retry_timer_);
+    esp_timer_start_once(peripheral_retry_timer_, delay_us);
+}
+
+void Application::OnPeripheralRetry() {
+    std::deque<std::unique_ptr<PeripheralTask>> pending;
+    {
+        std::lock_guard<std::mutex> lock(peripheral_retry_mutex_);
+        size_t count = peripheral_retry_queue_.size();
+        for (size_t i = 0; i < count; ++i) {
+            pending.push_back(std::move(peripheral_retry_queue_.front()));
+            peripheral_retry_queue_.pop_front();
+        }
+    }
+
+    for (auto& task : pending) {
+        EnqueuePeripheralTask(std::move(task), 0, true);
+    }
+
+    bool has_more = false;
+    {
+        std::lock_guard<std::mutex> lock(peripheral_retry_mutex_);
+        has_more = !peripheral_retry_queue_.empty();
+    }
+
+    if (has_more) {
+        SchedulePeripheralRetry(kPeripheralRetryDelayUs);
+    }
+}
+
+bool Application::ScheduleEarComboStop(uint32_t duration_ms) {
+    if (ear_combo_stop_timer_ == nullptr || duration_ms == 0) {
+        return false;
+    }
+    esp_timer_stop(ear_combo_stop_timer_);
+    esp_timer_start_once(ear_combo_stop_timer_, duration_ms * 1000ULL);
+    return true;
+}
+
+void Application::CancelEarComboStopTimer() {
+    if (ear_combo_stop_timer_) {
+        esp_timer_stop(ear_combo_stop_timer_);
+    }
+}
+
+void Application::OnEarComboStopTimeout() {
+    auto task = std::make_unique<PeripheralTask>();
+    task->action = PeripheralAction::kEarStopCombo;
+    task->source = PeripheralTaskSource::kSequence;
+    if (!EnqueuePeripheralTask(std::move(task))) {
+        ESP_LOGW(TAG, "Failed to enqueue ear combo stop task");
+    }
+}
+
 void Application::SchedulePeripheralEmotion(const std::string& emotion) {
     if (peripheral_task_queue_ == nullptr) return;
-    PeripheralTask task{PeripheralAction::kEarEmotion, emotion};
-    xQueueSend(peripheral_task_queue_, &task, 0);
+    auto task = std::make_unique<PeripheralTask>();
+    task->action = PeripheralAction::kEarEmotion;
+    task->emotion = emotion;
+    task->source = PeripheralTaskSource::kEmotion;
+    if (!EnqueuePeripheralTask(std::move(task))) {
+        ESP_LOGW(TAG, "Failed to enqueue peripheral emotion task: %s", emotion.c_str());
+    }
 }
 
 void Application::PeripheralWorkerTask() {
-    PeripheralTask task;
+    PeripheralTask* task = nullptr;
     while (true) {
         if (xQueueReceive(peripheral_task_queue_, &task, portMAX_DELAY) == pdTRUE) {
-            // speaking 首包窗口期（2s）抑制大动作
-            uint64_t now_ms = esp_timer_get_time() / 1000;
-            if (device_state_ == kDeviceStateSpeaking &&
-                last_tts_start_time_ms_ > 0 &&
-                (now_ms - last_tts_start_time_ms_) < 2000) {
-                uint64_t remain = 2000 - (now_ms - last_tts_start_time_ms_);
-                vTaskDelay(pdMS_TO_TICKS((uint32_t)remain));
+            std::unique_ptr<PeripheralTask> task_ptr(task);
+            if (!task_ptr) {
+                continue;
             }
+            // speaking 首包窗口期（2s）抑制大动作 - 改为非阻塞延迟投递
+            // 注意：停止动作（kEarStopCombo）应立即执行，不应延迟
+            uint64_t now_ms = esp_timer_get_time() / 1000;
+            bool should_delay = (task_ptr->action != PeripheralAction::kEarStopCombo) &&
+                               device_state_ == kDeviceStateSpeaking &&
+                               last_tts_start_time_ms_ > 0 &&
+                               (now_ms - last_tts_start_time_ms_) < 2000;
+            
+            if (should_delay) {
+                uint64_t remain = 2000 - (now_ms - last_tts_start_time_ms_);
+                // 将任务重新放回队列，延迟执行，避免阻塞Worker Task
+                // 使用定时器延迟投递，而不是阻塞当前任务
+                if (peripheral_retry_timer_) {
+                    {
+                        std::lock_guard<std::mutex> lock(peripheral_retry_mutex_);
+                        peripheral_retry_queue_.push_back(std::move(task_ptr));
+                    }
+                    esp_timer_stop(peripheral_retry_timer_);
+                    esp_timer_start_once(peripheral_retry_timer_, remain * 1000ULL);
+                    ESP_LOGD(TAG, "Delaying peripheral action in speaking first packet window: %llu ms", remain);
+                    continue;  // 跳过当前任务，等待延迟后重新投递
+                }
+                // 如果定时器不可用，允许执行（总比阻塞好）
+            }
+            
             auto ear = Board::GetInstance().GetEarController();
-            switch (task.action) {
+            switch (task_ptr->action) {
                 case PeripheralAction::kEarEmotion:
-                    if (ear) ear->TriggerEmotion(task.emotion.c_str());
+                    if (ear) ear->TriggerEmotion(task_ptr->emotion.c_str());
                     break;
                 case PeripheralAction::kEarSequence: {
                     if (ear) {
                         ear_combo_param_t combo;
-                        combo.combo_action = static_cast<ear_combo_action_t>(task.combo_action);
-                        combo.duration_ms = task.duration_ms;
+                        combo.combo_action = static_cast<ear_combo_action_t>(task_ptr->combo_action);
+                        combo.duration_ms = task_ptr->duration_ms;
                         ear->MoveBoth(combo);
                     }
                     break;
                 }
+                case PeripheralAction::kEarStopCombo:
+                    // 停止动作应立即执行，不应延迟
+                    if (ear) {
+                        ear->StopBoth();
+                    }
+                    break;
                 default:
                     break;
             }
@@ -929,6 +1076,50 @@ void Application::Schedule(std::function<void()> callback) {
         main_tasks_.push_back(std::move(callback));
     }
     xEventGroupSetBits(event_group_, MAIN_EVENT_SCHEDULE);
+}
+
+bool Application::EnqueuePeripheralTask(std::unique_ptr<PeripheralTask> task, TickType_t ticks_to_wait, bool allow_retry) {
+    if (peripheral_task_queue_ == nullptr || !task) {
+        return false;
+    }
+
+    if (peripheral_queue_length_ == 0 && peripheral_task_queue_ != nullptr) {
+        peripheral_queue_length_ = uxQueueMessagesWaiting(peripheral_task_queue_) + uxQueueSpacesAvailable(peripheral_task_queue_);
+    }
+
+    PeripheralTask* raw_task = task.get();
+    if (xQueueSend(peripheral_task_queue_, &raw_task, ticks_to_wait) == pdTRUE) {
+        size_t current_usage = GetPeripheralQueueUsage();
+        size_t previous = peripheral_queue_max_usage_.load();
+        while (current_usage > previous &&
+               !peripheral_queue_max_usage_.compare_exchange_weak(previous, current_usage)) {
+        }
+        task.release();
+        return true;
+    }
+
+    if (!allow_retry) {
+        peripheral_queue_drop_count_.fetch_add(1);
+        ESP_LOGW(TAG, "Peripheral queue drop (action=%d, source=%d)",
+                 static_cast<int>(task->action), static_cast<int>(task->source));
+        return false;
+    }
+
+    if (task->retry_count < kPeripheralMaxRetry) {
+        task->retry_count++;
+        peripheral_queue_retry_count_.fetch_add(1);
+        {
+            std::lock_guard<std::mutex> lock(peripheral_retry_mutex_);
+            peripheral_retry_queue_.push_back(std::move(task));
+        }
+        SchedulePeripheralRetry();
+    } else {
+        peripheral_queue_drop_count_.fetch_add(1);
+        ESP_LOGW(TAG, "Peripheral queue drop after retries (action=%d, source=%d)",
+                 static_cast<int>(task->action), static_cast<int>(task->source));
+    }
+
+    return false;
 }
 
 // The Main Event Loop controls the chat state and websocket connection

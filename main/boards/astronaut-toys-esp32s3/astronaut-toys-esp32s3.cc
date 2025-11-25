@@ -614,9 +614,9 @@ public:
     volume_down_button_(VOLUME_DOWN_BUTTON_GPIO),
     // key1_button_(KEY1_BUTTON_GPIO),
     // key2_button_(KEY2_BUTTON_GPIO),
-    head_touch_button_(TOUCH_CHANNEL_HEAD, 0.05f),    // 触摸按钮对象创建
-    nose_touch_button_(TOUCH_CHANNEL_NOSE, 0.05f),    // 触摸按钮对象创建
-    belly_touch_button_(TOUCH_CHANNEL_BELLY, 0.05f) { // 触摸按钮对象创建
+    head_touch_button_(TOUCH_CHANNEL_HEAD, 0.10f),    // 触摸按钮对象创建
+    nose_touch_button_(TOUCH_CHANNEL_NOSE, 0.10f),    // 触摸按钮对象创建
+    belly_touch_button_(TOUCH_CHANNEL_BELLY, 0.10f) { // 触摸按钮对象创建
         
         // InitializeADC(); // 电池采样电路
         InitializeCodecI2c();

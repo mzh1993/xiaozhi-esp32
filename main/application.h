@@ -11,6 +11,7 @@
 #include <mutex>
 #include <deque>
 #include <memory>
+#include <atomic>
 
 #include "protocol.h"
 #include "ota.h"
@@ -66,6 +67,8 @@ public:
     AecMode GetAecMode() const { return aec_mode_; }
     void PlaySound(const std::string_view& sound);
     AudioService& GetAudioService() { return audio_service_; }
+    void CancelEarComboStopTimer();
+    bool ScheduleEarComboStop(uint32_t duration_ms);
     // 外设任务队列访问器
     QueueHandle_t GetPeripheralTaskQueue() { return peripheral_task_queue_; }
     // 外设动作投递（情绪）
@@ -74,14 +77,23 @@ public:
     // 外设任务类型定义
     enum class PeripheralAction {
         kEarEmotion = 0,
-        kEarSequence = 1
+        kEarSequence = 1,
+        kEarStopCombo = 2
+    };
+    enum class PeripheralTaskSource {
+        kEmotion = 0,
+        kSequence = 1
     };
     struct PeripheralTask {
         PeripheralAction action;
         std::string emotion;
         int combo_action = 0;
         uint32_t duration_ms = 0;
+        PeripheralTaskSource source = PeripheralTaskSource::kEmotion;
+        uint8_t retry_count = 0;
     };
+
+    bool EnqueuePeripheralTask(std::unique_ptr<PeripheralTask> task, TickType_t ticks_to_wait = 0, bool allow_retry = true);
 
 private:
     Application();
@@ -134,6 +146,17 @@ private:
     // 外设 Worker
     QueueHandle_t peripheral_task_queue_ = nullptr;
     TaskHandle_t peripheral_worker_task_handle_ = nullptr;
+    esp_timer_handle_t peripheral_retry_timer_ = nullptr;
+    esp_timer_handle_t ear_combo_stop_timer_ = nullptr;
+    std::deque<std::unique_ptr<PeripheralTask>> peripheral_retry_queue_;
+    std::mutex peripheral_retry_mutex_;
+    std::atomic<uint32_t> peripheral_queue_drop_count_{0};
+    std::atomic<uint32_t> peripheral_queue_retry_count_{0};
+    std::atomic<size_t> peripheral_queue_max_usage_{0};
+    UBaseType_t peripheral_queue_length_ = 0;
+
+    static constexpr uint8_t kPeripheralMaxRetry = 5;
+    static constexpr uint32_t kPeripheralRetryDelayUs = 50 * 1000; // 50ms
 
     void OnWakeWordDetected();
     void OnClockTimer();
@@ -149,6 +172,10 @@ private:
     void OnAbortDelay();
     void OnTouchDebounce();
     void PeripheralWorkerTask();
+    void OnPeripheralRetry();
+    void SchedulePeripheralRetry(uint32_t delay_us = kPeripheralRetryDelayUs);
+    size_t GetPeripheralQueueUsage() const;
+    void OnEarComboStopTimeout();
 };
 
 

@@ -91,6 +91,7 @@ public:
         uint32_t duration_ms = 0;
         PeripheralTaskSource source = PeripheralTaskSource::kEmotion;
         uint8_t retry_count = 0;
+        bool is_last_sequence_step = false;  // P0修复：标记是否为序列最后一步
     };
 
     bool EnqueuePeripheralTask(std::unique_ptr<PeripheralTask> task, TickType_t ticks_to_wait = 0, bool allow_retry = true);

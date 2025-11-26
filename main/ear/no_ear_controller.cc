@@ -123,6 +123,16 @@ bool NoEarController::IsSequenceActive() {
     return false; // 没有硬件，永远不会执行序列
 }
 
+// ===== 序列完成回调接口 - 空实现 =====
+
+void NoEarController::MarkSequenceCompleted() {
+    LogOperation("MarkSequenceCompleted", "No hardware - operation ignored");
+}
+
+void NoEarController::SetLastSequenceMoveFlag(bool is_last) {
+    LogOperation("SetLastSequenceMoveFlag", "No hardware - operation ignored");
+}
+
 // ===== 测试接口 - 空实现 =====
 
 void NoEarController::TestBasicEarFunctions() {

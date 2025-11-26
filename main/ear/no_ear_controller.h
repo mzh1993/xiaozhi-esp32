@@ -40,6 +40,11 @@ public:
     virtual bool IsMoving(bool left_ear) override;
     virtual bool IsSequenceActive() override;
     
+    // 重写序列完成回调接口 - 空实现
+    virtual void MarkSequenceCompleted() override;
+    // P0修复：标记当前MoveBoth是否是序列的最后一个步骤
+    virtual void SetLastSequenceMoveFlag(bool is_last) override;
+    
     // 重写测试接口 - 空实现
     virtual void TestBasicEarFunctions() override;
     virtual void TestEarPositions() override;

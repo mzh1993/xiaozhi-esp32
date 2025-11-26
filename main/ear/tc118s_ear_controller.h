@@ -98,6 +98,11 @@ public:
     
     // 系统初始化方法
     void SetEarInitialPosition();
+    
+    // P0修复：重写基类的序列完成回调方法
+    virtual void MarkSequenceCompleted() override;
+    // P0修复：标记当前MoveBoth是否是序列的最后一个步骤
+    virtual void SetLastSequenceMoveFlag(bool is_last) override;
 
 private:
     // GPIO引脚配置
@@ -148,6 +153,8 @@ private:
     uint64_t gpio_set_time_ms_ = 0;           // GPIO 实际设置时间（精确）
     uint64_t scheduled_duration_ms_ = 0;      // 计划持续时间
     uint64_t stop_timer_scheduled_time_ms_ = 0; // 停止定时器启动时间
+    // P0修复：标记当前MoveBoth是否是序列的最后一个步骤
+    volatile bool is_last_sequence_move_ = false;
 
     void UpdateComboState(bool moving, ear_combo_action_t action, uint64_t timestamp_ms);
     void ResetComboState();

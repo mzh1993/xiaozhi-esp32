@@ -1053,10 +1053,32 @@ void Application::PeripheralWorkerTask() {
                     break;
                 case PeripheralAction::kEarSequence: {
                     if (ear) {
+                        // 关键修复：检查序列是否仍然活跃，如果已经完成则不处理
+                        // 这防止处理已完成的序列的后续步骤，避免覆盖is_last_sequence_move_标志
+                        // 这是解决"序列一直在动"问题的关键修复
+                        if (!ear->IsSequenceActive()) {
+                            ESP_LOGW(TAG, "[WORKER] Sequence already completed, ignoring step (action=%d, duration=%lu ms, is_last=%s)", 
+                                     task_ptr->combo_action, task_ptr->duration_ms,
+                                     task_ptr->is_last_sequence_step ? "true" : "false");
+                            break;  // 序列已完成，忽略此步骤
+                        }
+                        
                         ear_combo_param_t combo;
                         combo.combo_action = static_cast<ear_combo_action_t>(task_ptr->combo_action);
                         combo.duration_ms = task_ptr->duration_ms;
+                        
+                        // P0修复：如果是序列的最后一个步骤，设置标志，让stop timer在触发时调用MarkSequenceCompleted
+                        if (task_ptr->is_last_sequence_step) {
+                            ESP_LOGI(TAG, "[WORKER] Last sequence step executing (duration=%lu ms) - marking for completion in stop timer", task_ptr->duration_ms);
+                            ear->SetLastSequenceMoveFlag(true);  // 标记这是最后一个步骤的MoveBoth
+                        } else {
+                            ear->SetLastSequenceMoveFlag(false);  // 确保非最后步骤时标志为false
+                        }
+                        
                         ear->MoveBoth(combo);
+                        
+                        // P0修复：不再在这里延迟调用MarkSequenceCompleted
+                        // 改为在stop timer回调中检查is_last_sequence_move_标志，在stop timer触发时调用
                     }
                     break;
                 }

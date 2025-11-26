@@ -122,6 +122,12 @@ public:
     virtual bool IsMoving(bool left_ear) = 0;
     virtual bool IsSequenceActive() = 0;
     
+    // ===== 序列完成回调接口 =====
+    // P0修复：用于Worker在最后一个序列任务完成后标记序列完成
+    virtual void MarkSequenceCompleted() = 0;
+    // P0修复：标记当前MoveBoth是否是序列的最后一个步骤
+    virtual void SetLastSequenceMoveFlag(bool is_last) = 0;
+    
     // ===== 测试接口 - 用于调试和功能验证 =====
     virtual void TestBasicEarFunctions() = 0;
     virtual void TestEarPositions() = 0;

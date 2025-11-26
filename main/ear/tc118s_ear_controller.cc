@@ -519,6 +519,17 @@ esp_err_t Tc118sEarController::StopBoth() {
         }
     }
     
+    // P0修复：检查是否是序列的最后一个步骤
+    // 如果是，在GPIO停止后调用MarkSequenceCompleted
+    bool is_last_sequence_move = false;
+    if (state_mutex_) {
+        xSemaphoreTake(state_mutex_, portMAX_DELAY);
+        is_last_sequence_move = is_last_sequence_move_;
+        xSemaphoreGive(state_mutex_);
+    } else {
+        is_last_sequence_move = is_last_sequence_move_;
+    }
+    
     if (stop_timer_) {
         xTimerStop(stop_timer_, 0);
     }
@@ -531,6 +542,57 @@ esp_err_t Tc118sEarController::StopBoth() {
     gpio_set_time_ms_ = 0;
     scheduled_duration_ms_ = 0;
     stop_timer_scheduled_time_ms_ = 0;
+    
+    // P0修复：如果是序列的最后一个步骤，在GPIO停止后调用MarkSequenceCompleted
+    // 这样可以确保在GPIO真正停止后才设置完成标志，避免时序竞争
+    // 关键修复：只有在序列仍然活跃时才处理最后一个步骤
+    bool is_sequence_still_active = false;
+    if (state_mutex_) {
+        xSemaphoreTake(state_mutex_, portMAX_DELAY);
+        is_sequence_still_active = sequence_active_;
+        xSemaphoreGive(state_mutex_);
+    } else {
+        is_sequence_still_active = sequence_active_;
+    }
+    
+    if (is_last_sequence_move && is_sequence_still_active) {
+        ESP_LOGI(TAG, "[SEQUENCE] Last sequence step stopped - marking sequence as completed (from stop timer)");
+        // 重置标志
+        if (state_mutex_) {
+            xSemaphoreTake(state_mutex_, portMAX_DELAY);
+            is_last_sequence_move_ = false;
+            xSemaphoreGive(state_mutex_);
+        } else {
+            is_last_sequence_move_ = false;
+        }
+        
+        // 延迟50ms后调用MarkSequenceCompleted，确保GPIO状态完全稳定
+        // 使用xTimerPendFunctionCall，避免阻塞当前上下文（可能是定时器回调）
+        BaseType_t result = xTimerPendFunctionCall(
+            [](void* self_ptr, uint32_t param) {
+                EarController* ear_controller = static_cast<EarController*>(self_ptr);
+                if (ear_controller) {
+                    ear_controller->MarkSequenceCompleted();
+                }
+            },
+            this, 0, pdMS_TO_TICKS(50)
+        );
+        
+        if (result != pdPASS) {
+            ESP_LOGW(TAG, "[SEQUENCE] Failed to schedule MarkSequenceCompleted, executing directly");
+            MarkSequenceCompleted();
+        }
+    } else if (is_last_sequence_move && !is_sequence_still_active) {
+        // 序列已经完成（可能被其他方式停止），只重置标志
+        ESP_LOGI(TAG, "[SEQUENCE] Last sequence step stopped but sequence already completed, resetting flag");
+        if (state_mutex_) {
+            xSemaphoreTake(state_mutex_, portMAX_DELAY);
+            is_last_sequence_move_ = false;
+            xSemaphoreGive(state_mutex_);
+        } else {
+            is_last_sequence_move_ = false;
+        }
+    }
     
     return ESP_OK;
 }
@@ -685,6 +747,9 @@ esp_err_t Tc118sEarController::MoveBoth(ear_combo_param_t combo) {
     UpdateComboState(true, combo.combo_action, action_start_time_ms);
 
     ScheduleComboStop(duration_ms);
+    
+    // P0修复：如果设置了is_last_sequence_move_标志，在MoveBoth后保持标志
+    // 这样stop timer回调可以检查这个标志
     
     return ESP_OK;
 }
@@ -856,15 +921,14 @@ esp_err_t Tc118sEarController::TriggerEmotion(const char* emotion) {
     // 验证序列数据（调试）
     ESP_LOGI(TAG, "[EMOTION] Triggering emotion '%s' with %d steps", emotion, static_cast<int>(sequence.size()));
     for (size_t i = 0; i < sequence.size(); ++i) {
-        // 直接访问结构体成员，避免可能的对齐问题
-        const ear_sequence_step_t& step = sequence[i];
-        
+        // 直接使用sequence[i]访问，避免未使用变量警告
         EAR_LOG_VERBOSE(TAG, "[EMOTION]   Step %d: action=%d, duration=%lu ms, delay=%lu ms", 
-                 static_cast<int>(i + 1), static_cast<int>(step.combo_action), step.duration_ms, step.delay_ms);
+                 static_cast<int>(i + 1), static_cast<int>(sequence[i].combo_action), sequence[i].duration_ms, sequence[i].delay_ms);
         
         // 额外验证：打印结构体地址和内存内容（调试用）
         EAR_LOG_DEBUG(TAG, "[EMOTION]     Step ptr=%p, sizeof(step)=%zu, action=%d, duration=%lu, delay=%lu", 
-                 static_cast<const void*>(&step), sizeof(step), static_cast<int>(step.combo_action), step.duration_ms, step.delay_ms);
+                 static_cast<const void*>(&sequence[i]), sizeof(sequence[i]), 
+                 static_cast<int>(sequence[i].combo_action), sequence[i].duration_ms, sequence[i].delay_ms);
     }
     
     // 更新情绪状态
@@ -972,54 +1036,116 @@ void Tc118sEarController::OnSequenceTimer(TimerHandle_t timer) {
     ear_combo_param_t combo = {step.combo_action, step.duration_ms};
     // 投递到外设 Worker 执行 GPIO，避免占用主循环
     auto& app = Application::GetInstance();
+    
+    // 获取队列句柄用于监控
+    QueueHandle_t queue = app.GetPeripheralTaskQueue();
+    
+    // P0修复：检查是否是序列的最后一个步骤
+    // 条件：当前步骤是序列中的最后一步（current_step_index_ + 1 >= size），且只循环一次（current_loop_count_ == 0）
+    bool is_last_step = (current_step_index_ + 1 >= current_sequence_.size()) && (current_loop_count_ == 0);
+    
     auto task = std::make_unique<Application::PeripheralTask>();
     task->action = Application::PeripheralAction::kEarSequence;
     task->combo_action = static_cast<int>(combo.combo_action);
     task->duration_ms = combo.duration_ms;
     task->source = Application::PeripheralTaskSource::kSequence;
-    if (!app.EnqueuePeripheralTask(std::move(task))) {
+    task->is_last_sequence_step = is_last_step;  // P0修复：标记最后一个任务
+    
+    bool enqueued = app.EnqueuePeripheralTask(std::move(task));
+    
+    // 监控队列状态（投递后）
+    if (queue) {
+        UBaseType_t queue_waiting_after = uxQueueMessagesWaiting(queue);
+        UBaseType_t queue_spaces = uxQueueSpacesAvailable(queue);
+        UBaseType_t queue_total = queue_waiting_after + queue_spaces;
+        
+        if (queue_waiting_after > queue_total / 2) {
+            ESP_LOGW(TAG, "[QUEUE] Queue usage high: %u/%u (%.1f%%), step %d/%d",
+                     queue_waiting_after, queue_total,
+                     100.0f * queue_waiting_after / queue_total,
+                     current_step_index_ + 1, static_cast<int>(current_sequence_.size()));
+        } else {
+            EAR_LOG_VERBOSE(TAG, "[QUEUE] Step %d/%d: queue=%u/%u waiting%s",
+                     current_step_index_ + 1, static_cast<int>(current_sequence_.size()),
+                     queue_waiting_after, queue_total,
+                     is_last_step ? " [LAST STEP]" : "");
+        }
+    }
+    
+    if (!enqueued) {
         ESP_LOGW(TAG, "Failed to enqueue ear sequence task, combo=%d", static_cast<int>(combo.combo_action));
     }
     
     // 移动到下一步
     current_step_index_++;
     
-    // 检查序列是否完成
-    if (current_step_index_ >= current_sequence_.size()) {
-        current_step_index_ = 0;
-        current_loop_count_++;
-        
-        // 检查循环是否完成
-        if (current_loop_count_ >= 1) {
-            // 序列完成，重置状态
-            sequence_active_ = false;
-            emotion_action_active_ = false;
-            
-            EAR_LOG_VERBOSE(TAG, "Sequence completed, resetting emotion state");
-            
-            // 停止定时器
-            if (sequence_timer_) {
-                xTimerStop(sequence_timer_, 0);
+            // 检查序列是否完成
+            bool sequence_just_completed = false;
+            if (current_step_index_ >= current_sequence_.size()) {
+                current_step_index_ = 0;
+                current_loop_count_++;
+                
+                // 检查循环是否完成
+                if (current_loop_count_ >= 1) {
+                    // P0修复：序列完成，但不立即设置完成标志
+                    // 完成标志将在Worker处理完最后一个任务后设置（通过is_last_sequence_step标记）
+                    sequence_just_completed = true;  // 标记序列刚刚完成
+                    ESP_LOGI(TAG, "[SEQUENCE] Last step enqueued - completion will be handled by Worker");
+                    
+                    // 序列完成，检查队列状态（仅用于监控）
+                    QueueHandle_t queue = app.GetPeripheralTaskQueue();
+                    if (queue) {
+                        UBaseType_t queue_waiting = uxQueueMessagesWaiting(queue);
+                        UBaseType_t queue_spaces = uxQueueSpacesAvailable(queue);
+                        UBaseType_t queue_total = queue_waiting + queue_spaces;
+                        
+                        ESP_LOGI(TAG, "[SEQUENCE] Sequence completing - Queue status: %u/%u waiting (%.1f%%), %u spaces",
+                                 queue_waiting, queue_total,
+                                 queue_total > 0 ? 100.0f * queue_waiting / queue_total : 0.0f,
+                                 queue_spaces);
+                        
+                        if (queue_waiting > 0) {
+                            ESP_LOGW(TAG, "[SEQUENCE] WARNING: %u tasks still in queue when sequence completes! "
+                                     "These tasks may cause action interruption.", queue_waiting);
+                            
+                            // 记录队列积压的详细信息
+                            if (queue_waiting > queue_total / 2) {
+                                ESP_LOGE(TAG, "[SEQUENCE] CRITICAL: Queue usage exceeds 50%%! "
+                                         "Worker may be overloaded or blocked.");
+                            }
+                        } else {
+                            ESP_LOGI(TAG, "[SEQUENCE] Queue is empty - good timing");
+                        }
+                    }
+                    
+                    // P0修复：停止定时器，但不设置完成标志（由Worker处理）
+                    if (sequence_timer_) {
+                        xTimerStop(sequence_timer_, 0);
+                    }
+                    
+                    // 关键修复：设置sequence_active_ = false，防止后续代码重新启动定时器
+                    // 但保持emotion_action_active_ = true，等待Worker完成最后一个任务
+                    sequence_active_ = false;
+                    ESP_LOGI(TAG, "[SEQUENCE] Sequence timer stopped, waiting for Worker to complete last step");
+                    
+                    // P0修复：不调用ScheduleEarFinalPosition()，等待Worker处理完最后一个任务后调用
+                    return;  // 直接返回，防止后续代码重新设置定时器
+                }
             }
             
-            // 使用延迟队列委托位置设置，避免阻塞定时器回调
-            ScheduleEarFinalPosition();
-        }
-    }
-    
-    // 设置下一步的定时器
-    if (sequence_active_) {
-        uint32_t next_delay = step.delay_ms;
-        if (next_delay == 0) {
-            next_delay = SCENARIO_DEFAULT_DELAY_MS;
-        }
-        // 确保定时器周期 >= 动作持续时间 + 暂停时间，避免动作重叠
-        uint32_t total_time = step.duration_ms + next_delay;
-        if (total_time < SCENARIO_DEFAULT_DELAY_MS) {
-            total_time = SCENARIO_DEFAULT_DELAY_MS;
-        }
-        xTimerChangePeriod(sequence_timer_, MS_TO_TICKS_MIN1(total_time), 0);
-    }
+            // 设置下一步的定时器（只有在序列未完成时才执行）
+            if (sequence_active_ && !sequence_just_completed) {
+                uint32_t next_delay = step.delay_ms;
+                if (next_delay == 0) {
+                    next_delay = SCENARIO_DEFAULT_DELAY_MS;
+                }
+                // 确保定时器周期 >= 动作持续时间 + 暂停时间，避免动作重叠
+                uint32_t total_time = step.duration_ms + next_delay;
+                if (total_time < SCENARIO_DEFAULT_DELAY_MS) {
+                    total_time = SCENARIO_DEFAULT_DELAY_MS;
+                }
+                xTimerChangePeriod(sequence_timer_, MS_TO_TICKS_MIN1(total_time), 0);
+            }
 }
 
 bool Tc118sEarController::ShouldTriggerEmotion(const char* emotion) {
@@ -1108,6 +1234,41 @@ void Tc118sEarController::ScheduleEarFinalPosition() {
         // 如果调度失败，直接执行（虽然会阻塞，但总比不执行好）
         SetEarFinalPosition();
     }
+}
+
+// P0修复：标记当前MoveBoth是否是序列的最后一个步骤
+void Tc118sEarController::SetLastSequenceMoveFlag(bool is_last) {
+    if (state_mutex_) {
+        xSemaphoreTake(state_mutex_, portMAX_DELAY);
+        is_last_sequence_move_ = is_last;
+        xSemaphoreGive(state_mutex_);
+    } else {
+        is_last_sequence_move_ = is_last;
+    }
+    
+    ESP_LOGI(TAG, "[SEQUENCE] SetLastSequenceMoveFlag: %s", is_last ? "true" : "false");
+}
+
+// P0修复：重写基类方法，标记序列完成
+// 现在从StopBoth中调用（当stop timer触发时），确保在GPIO真正停止后才调用
+void Tc118sEarController::MarkSequenceCompleted() {
+    ESP_LOGI(TAG, "[SEQUENCE] Marking sequence as completed (from stop timer)");
+    
+    // 设置完成标志
+    sequence_active_ = false;
+    emotion_action_active_ = false;
+    
+    EAR_LOG_VERBOSE(TAG, "Sequence completed, resetting emotion state");
+    
+    // 停止定时器（如果还在运行）
+    if (sequence_timer_) {
+        xTimerStop(sequence_timer_, 0);
+    }
+    
+    // P0修复：StopBoth已经在stop timer回调中调用过了，GPIO已经停止
+    // 直接调用ScheduleEarFinalPosition，无需再次StopBoth
+    // 延迟50ms确保GPIO状态稳定
+    ScheduleEarFinalPosition();
 }
 
 void Tc118sEarController::SetEarInitialPosition() {

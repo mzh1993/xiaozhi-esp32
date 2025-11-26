@@ -149,6 +149,10 @@ private:
     ear_combo_action_t current_combo_action_ = EAR_COMBO_BOTH_STOP;
     uint64_t last_combo_start_time_ms_ = 0;
     uint64_t last_move_tick_ms_ = 0;
+    // 持续时间监控：记录动作的实际执行时间
+    uint64_t gpio_set_time_ms_ = 0;           // GPIO 实际设置时间（精确）
+    uint64_t scheduled_duration_ms_ = 0;      // 计划持续时间
+    uint64_t stop_timer_scheduled_time_ms_ = 0; // 停止定时器启动时间
 
     void UpdateComboState(bool moving, ear_combo_action_t action, uint64_t timestamp_ms);
     void ResetComboState();

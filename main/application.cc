@@ -990,6 +990,10 @@ void Application::CancelEarComboStopTimer() {
 }
 
 void Application::OnEarComboStopTimeout() {
+    // 记录停止定时器触发时间（用于持续时间验证）
+    uint64_t timer_trigger_time_ms = esp_timer_get_time() / 1000;
+    ESP_LOGD(TAG, "[DURATION] Ear combo stop timer triggered at: %" PRIu64 " ms", timer_trigger_time_ms);
+    
     auto task = std::make_unique<PeripheralTask>();
     task->action = PeripheralAction::kEarStopCombo;
     task->source = PeripheralTaskSource::kSequence;

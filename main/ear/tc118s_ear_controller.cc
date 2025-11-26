@@ -203,7 +203,10 @@ Tc118sEarController::Tc118sEarController(gpio_num_t left_ina_pin, gpio_num_t lef
     , emotion_action_active_(false)
     , stop_timer_(nullptr)
     , current_combo_action_(EAR_COMBO_BOTH_STOP)
-    , last_combo_start_time_ms_(0) {
+    , last_combo_start_time_ms_(0)
+    , gpio_set_time_ms_(0)
+    , scheduled_duration_ms_(0)
+    , stop_timer_scheduled_time_ms_(0) {
     
     ESP_LOGI(TAG, "TC118S Ear Controller created with pins: L_INA=%d, L_INB=%d, R_INA=%d, R_INB=%d",
              left_ina_pin_, left_inb_pin_, right_ina_pin_, right_inb_pin_);
@@ -420,6 +423,31 @@ esp_err_t Tc118sEarController::StopEar(bool left_ear) {
 }
 
 esp_err_t Tc118sEarController::StopBoth() {
+    // 记录停止时间并计算实际持续时间（如果之前有动作）
+    uint64_t stop_time_ms = esp_timer_get_time() / 1000;
+    if (gpio_set_time_ms_ > 0 && scheduled_duration_ms_ > 0) {
+        uint64_t actual_duration_ms = stop_time_ms - gpio_set_time_ms_;
+        int64_t duration_error_ms = (int64_t)actual_duration_ms - (int64_t)scheduled_duration_ms_;
+        
+        // 打印持续时间验证信息
+        if (duration_error_ms > 5 || duration_error_ms < -5) {
+            ESP_LOGW(TAG, "[DURATION] Action duration mismatch: scheduled=%lu ms, actual=%" PRIu64 " ms, error=%" PRId64 " ms (action=%d)", 
+                     scheduled_duration_ms_, actual_duration_ms, duration_error_ms, current_combo_action_);
+        } else {
+            ESP_LOGI(TAG, "[DURATION] Action duration: scheduled=%lu ms, actual=%" PRIu64 " ms, error=%" PRId64 " ms (action=%d)", 
+                     scheduled_duration_ms_, actual_duration_ms, duration_error_ms, current_combo_action_);
+        }
+        
+        // 如果误差超过20%，记录警告
+        if (scheduled_duration_ms_ > 0) {
+            int32_t error_percent = (int32_t)((duration_error_ms * 100) / scheduled_duration_ms_);
+            if (error_percent > 20 || error_percent < -20) {
+                ESP_LOGW(TAG, "[DURATION] Large duration error: %d%% (action=%d, scheduled=%lu ms, actual=%" PRIu64 " ms)", 
+                         error_percent, current_combo_action_, scheduled_duration_ms_, actual_duration_ms);
+            }
+        }
+    }
+    
     if (stop_timer_) {
         xTimerStop(stop_timer_, 0);
     }
@@ -427,6 +455,12 @@ esp_err_t Tc118sEarController::StopBoth() {
     Application::GetInstance().CancelEarComboStopTimer();
     StopEar(true);
     StopEar(false);
+    
+    // 重置持续时间监控
+    gpio_set_time_ms_ = 0;
+    scheduled_duration_ms_ = 0;
+    stop_timer_scheduled_time_ms_ = 0;
+    
     return ESP_OK;
 }
 
@@ -478,6 +512,23 @@ esp_err_t Tc118sEarController::MoveBoth(ear_combo_param_t combo) {
         ESP_LOGD(TAG, "MoveBoth re-entry with same action=%d, duration=%lu ms",
                  combo.combo_action, duration_ms);
     } else if (is_moving) {
+        // 记录动作切换时的持续时间信息
+        uint64_t switch_time_ms = esp_timer_get_time() / 1000;
+        if (previous_start_time_ms > 0) {
+            uint64_t previous_elapsed_ms = switch_time_ms - previous_start_time_ms;
+            ESP_LOGI(TAG, "[DURATION] Action change: %d -> %d, previous action elapsed=%" PRIu64 " ms", 
+                     previous_action, combo.combo_action, previous_elapsed_ms);
+            
+            // 如果上一个动作还没执行完就被切换，记录警告
+            if (gpio_set_time_ms_ > 0 && scheduled_duration_ms_ > 0) {
+                uint64_t actual_elapsed_ms = switch_time_ms - gpio_set_time_ms_;
+                if (actual_elapsed_ms < scheduled_duration_ms_) {
+                    ESP_LOGW(TAG, "[DURATION] Action interrupted: elapsed=%" PRIu64 " ms < scheduled=%lu ms (short by %" PRIu64 " ms)", 
+                             actual_elapsed_ms, scheduled_duration_ms_, scheduled_duration_ms_ - actual_elapsed_ms);
+                }
+            }
+        }
+        
         ESP_LOGI(TAG, "MoveBoth action change: %d -> %d", previous_action, combo.combo_action);
         // 动作变化时，先停止当前动作的GPIO，避免快速反转
         // 注意：这里只停止GPIO，不调用StopBoth()（因为StopBoth会重置状态）
@@ -489,12 +540,20 @@ esp_err_t Tc118sEarController::MoveBoth(ear_combo_param_t combo) {
         if (stop_timer_) {
             xTimerStop(stop_timer_, 0);
         }
+        
+        // 重置持续时间监控（因为动作被提前停止）
+        gpio_set_time_ms_ = 0;
+        scheduled_duration_ms_ = 0;
+        stop_timer_scheduled_time_ms_ = 0;
     }
 
     last_move_tick_ms_ = now_ms;
 
     ESP_LOGI(TAG, "Moving both ears: combo=%d, duration=%lu ms", 
              combo.combo_action, duration_ms);
+    
+    // 记录计划持续时间（用于后续验证）
+    scheduled_duration_ms_ = duration_ms;
     
     // 根据组合动作类型设置双耳GPIO状态（移除阻塞性错峰启动）
     switch (combo.combo_action) {
@@ -510,18 +569,30 @@ esp_err_t Tc118sEarController::MoveBoth(ear_combo_param_t combo) {
             break;
             
         case EAR_COMBO_LEFT_FORWARD_RIGHT_HOLD:
+            // 记录 GPIO 设置时间
+            gpio_set_time_ms_ = esp_timer_get_time() / 1000;
             SetGpioLevels(true, EAR_ACTION_FORWARD);
             // 右耳保持当前状态，不改变
+            ESP_LOGD(TAG, "[DURATION] GPIO set at: %" PRIu64 " ms, scheduled duration: %lu ms", 
+                     gpio_set_time_ms_, scheduled_duration_ms_);
             break;
             
         case EAR_COMBO_LEFT_HOLD_RIGHT_FORWARD:
             // 左耳保持当前状态，不改变
+            // 记录 GPIO 设置时间
+            gpio_set_time_ms_ = esp_timer_get_time() / 1000;
             SetGpioLevels(false, EAR_ACTION_FORWARD);
+            ESP_LOGD(TAG, "[DURATION] GPIO set at: %" PRIu64 " ms, scheduled duration: %lu ms", 
+                     gpio_set_time_ms_, scheduled_duration_ms_);
             break;
             
         case EAR_COMBO_LEFT_FORWARD_RIGHT_BACKWARD:
+            // 记录 GPIO 设置时间
+            gpio_set_time_ms_ = esp_timer_get_time() / 1000;
             SetGpioLevels(true, EAR_ACTION_FORWARD);
             SetGpioLevels(false, EAR_ACTION_BACKWARD);
+            ESP_LOGD(TAG, "[DURATION] GPIO set at: %" PRIu64 " ms, scheduled duration: %lu ms", 
+                     gpio_set_time_ms_, scheduled_duration_ms_);
             break;
             
         default:
@@ -615,6 +686,9 @@ esp_err_t Tc118sEarController::PlaySequence(const ear_sequence_step_t* steps, ui
     current_sequence_.clear();
     for (uint8_t i = 0; i < count; i++) {
         current_sequence_.push_back(steps[i]);
+        // 添加调试日志：验证序列数据是否正确
+        ESP_LOGD(TAG, "[SEQUENCE] Load step %d: action=%d, duration=%lu ms, delay=%lu ms", 
+                 i + 1, static_cast<int>(steps[i].combo_action), steps[i].duration_ms, steps[i].delay_ms);
     }
     
     // 开始序列
@@ -696,6 +770,23 @@ esp_err_t Tc118sEarController::TriggerEmotion(const char* emotion) {
     
     const std::vector<ear_sequence_step_t>& sequence = it->second;
     
+    // 验证序列数据（调试）
+    ESP_LOGI(TAG, "[EMOTION] Triggering emotion '%s' with %d steps", emotion, static_cast<int>(sequence.size()));
+    for (size_t i = 0; i < sequence.size(); ++i) {
+        // 直接访问结构体成员，避免可能的对齐问题
+        const ear_sequence_step_t& step = sequence[i];
+        uint32_t duration_value = step.duration_ms;
+        uint32_t delay_value = step.delay_ms;
+        int action_value = static_cast<int>(step.combo_action);
+        
+        ESP_LOGI(TAG, "[EMOTION]   Step %d: action=%d, duration=%lu ms, delay=%lu ms", 
+                 static_cast<int>(i + 1), action_value, duration_value, delay_value);
+        
+        // 额外验证：打印结构体地址和内存内容（调试用）
+        ESP_LOGD(TAG, "[EMOTION]     Step ptr=%p, sizeof(step)=%zu, action=%d, duration=%lu, delay=%lu", 
+                 static_cast<const void*>(&step), sizeof(step), action_value, duration_value, delay_value);
+    }
+    
     // 更新情绪状态
     UpdateEmotionState(emotion);
     
@@ -734,6 +825,36 @@ void Tc118sEarController::InitializeDefaultEmotionMappings() {
     // 复制默认映射到实例映射表
     for (const auto& pair : default_emotion_mappings_) {
         emotion_mappings_[pair.first] = pair.second;
+        
+        // 验证序列数据是否正确（特别检查 sad 情绪）
+        if (pair.first == "sad" && !pair.second.empty()) {
+            ESP_LOGI(TAG, "[EMOTION] Loading 'sad' emotion with %d steps", static_cast<int>(pair.second.size()));
+            
+            // 直接检查原始数组数据
+            ESP_LOGI(TAG, "[EMOTION] Original sad_sequence_[0]: action=%d, duration=%lu, delay=%lu", 
+                     static_cast<int>(sad_sequence_[0].combo_action), 
+                     sad_sequence_[0].duration_ms, sad_sequence_[0].delay_ms);
+            
+            // 检查复制后的 vector 数据
+            ESP_LOGI(TAG, "[EMOTION] Copied vector[0]: action=%d, duration=%lu, delay=%lu", 
+                     static_cast<int>(pair.second[0].combo_action), 
+                     pair.second[0].duration_ms, pair.second[0].delay_ms);
+            
+            // 验证数据是否一致
+            if (sad_sequence_[0].duration_ms != pair.second[0].duration_ms ||
+                sad_sequence_[0].delay_ms != pair.second[0].delay_ms) {
+                ESP_LOGW(TAG, "[EMOTION] Data mismatch detected in 'sad' emotion!");
+            }
+        }
+        
+        ESP_LOGD(TAG, "[EMOTION] Loaded emotion '%s' with %d steps", 
+                 pair.first.c_str(), static_cast<int>(pair.second.size()));
+        for (size_t i = 0; i < pair.second.size(); ++i) {
+            const ear_sequence_step_t& step = pair.second[i];
+            ESP_LOGD(TAG, "[EMOTION]   Step %d: action=%d, duration=%lu ms, delay=%lu ms", 
+                     static_cast<int>(i + 1), static_cast<int>(step.combo_action), 
+                     step.duration_ms, step.delay_ms);
+        }
     }
     ESP_LOGI(TAG, "Default emotion mappings initialized");
 }
@@ -749,6 +870,23 @@ void Tc118sEarController::OnSequenceTimer(TimerHandle_t timer) {
     
     // 执行当前步骤
     ear_sequence_step_t step = current_sequence_[current_step_index_];
+    
+    // 记录序列步骤开始时间（用于验证序列执行时间）
+    uint64_t step_start_time_ms = esp_timer_get_time() / 1000;
+    // 使用 %llu 格式，因为 ESP-IDF 可能不完全支持 PRIu64 宏展开
+    ESP_LOGI(TAG, "[SEQUENCE] Step %d/%d: action=%d, duration=%lu ms, delay=%lu ms, at=%llu ms", 
+             current_step_index_ + 1, static_cast<int>(current_sequence_.size()), 
+             static_cast<int>(step.combo_action), step.duration_ms, step.delay_ms, 
+             (unsigned long long)step_start_time_ms);
+    
+    // 检查上一个动作是否还在执行（如果存在）
+    if (gpio_set_time_ms_ > 0 && scheduled_duration_ms_ > 0) {
+        uint64_t elapsed_ms = step_start_time_ms - gpio_set_time_ms_;
+        if (elapsed_ms < scheduled_duration_ms_) {
+            ESP_LOGW(TAG, "[SEQUENCE] Previous action still running: elapsed=%" PRIu64 " ms, scheduled=%lu ms (interrupted)", 
+                     elapsed_ms, scheduled_duration_ms_);
+        }
+    }
     
     // 执行组合动作 - 改为主循环/Worker上下文执行，避免定时器回调阻塞
     ear_combo_param_t combo = {step.combo_action, step.duration_ms};
@@ -862,7 +1000,7 @@ void Tc118sEarController::UpdateEmotionState(const char* emotion) {
     last_emotion_time_ = esp_timer_get_time() / 1000;
     emotion_action_active_ = true;
     
-    ESP_LOGI(TAG, "Updated emotion state: %s, time: %" PRIu64, emotion, last_emotion_time_);
+    ESP_LOGI(TAG, "Updated emotion state: %s, time: %llu", emotion, (unsigned long long)last_emotion_time_);
 }
 
 void Tc118sEarController::SetEarFinalPosition() {
@@ -1080,6 +1218,16 @@ void Tc118sEarController::TestEarSequences() {
 
 // 停止定时器回调 - 用于非阻塞的MoveBoth
 void Tc118sEarController::OnStopTimer(TimerHandle_t timer) {
+    // 记录停止定时器触发时间
+    uint64_t timer_trigger_time_ms = esp_timer_get_time() / 1000;
+    if (stop_timer_scheduled_time_ms_ > 0 && scheduled_duration_ms_ > 0) {
+        uint64_t timer_delay_ms = timer_trigger_time_ms - stop_timer_scheduled_time_ms_;
+        int64_t delay_error_ms = (int64_t)timer_delay_ms - (int64_t)scheduled_duration_ms_;
+        
+        ESP_LOGI(TAG, "[DURATION] Stop timer triggered: scheduled=%lu ms, actual_delay=%" PRIu64 " ms, error=%" PRId64 " ms", 
+                 scheduled_duration_ms_, timer_delay_ms, delay_error_ms);
+    }
+    
     ESP_LOGI(TAG, "Stop timer triggered - stopping both ears");
     // moving_both_ 在 StopBoth() 中设置，不需要单独设置
     StopBoth();
@@ -1116,12 +1264,21 @@ void Tc118sEarController::ScheduleComboStop(uint32_t duration_ms) {
         return;
     }
 
+    // 记录停止定时器启动时间
+    uint64_t timer_start_time_ms = esp_timer_get_time() / 1000;
+    
     auto& app = Application::GetInstance();
     if (app.ScheduleEarComboStop(duration_ms)) {
+        stop_timer_scheduled_time_ms_ = timer_start_time_ms;
+        ESP_LOGD(TAG, "[DURATION] Stop timer scheduled at: %" PRIu64 " ms, duration: %lu ms", 
+                 stop_timer_scheduled_time_ms_, duration_ms);
         return;
     }
 
     if (stop_timer_) {
+        stop_timer_scheduled_time_ms_ = timer_start_time_ms;
+        ESP_LOGD(TAG, "[DURATION] Stop timer (FreeRTOS) scheduled at: %" PRIu64 " ms, duration: %lu ms", 
+                 stop_timer_scheduled_time_ms_, duration_ms);
         xTimerStop(stop_timer_, 0);
         xTimerChangePeriod(stop_timer_, MS_TO_TICKS_MIN1(duration_ms), 0);
         xTimerStart(stop_timer_, 0);
@@ -1146,6 +1303,8 @@ void Tc118sEarController::StartBothWithStagger(ear_combo_action_t combo_action, 
 
     // 修改：移除vTaskDelay阻塞，改为直接同时启动双耳
     // 错峰逻辑如果硬件确实需要，可以通过PWM软启动实现，但不在Worker Task中阻塞
+    // 记录 GPIO 实际设置时间（用于持续时间验证）
+    uint64_t gpio_set_time = esp_timer_get_time() / 1000;
     switch (combo_action) {
         case EAR_COMBO_BOTH_FORWARD:
             SoftStartSingleEar(true, EAR_ACTION_FORWARD);
@@ -1159,8 +1318,12 @@ void Tc118sEarController::StartBothWithStagger(ear_combo_action_t combo_action, 
             break;
         default:
             ESP_LOGW(TAG, "StartBothWithStagger: unexpected combo_action=%d", combo_action);
-            break;
+            return;
     }
+    // 记录 GPIO 设置完成时间
+    gpio_set_time_ms_ = gpio_set_time;
+    ESP_LOGD(TAG, "[DURATION] GPIO set at: %" PRIu64 " ms, scheduled duration: %lu ms", 
+             gpio_set_time_ms_, scheduled_duration_ms_);
 }
 
 

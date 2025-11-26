@@ -440,6 +440,17 @@ private:
             //     display_->ShowNotification(Lang::Strings::VOLUME + std::to_string(volume));
             // }
         });
+        volume_up_button_.OnDoubleClick([this]() {
+            auto codec = GetAudioCodec();
+            auto volume = codec->output_volume() - 10;
+            if (volume < 0) {
+                volume = 0;
+            }
+            codec->SetOutputVolume(volume);
+            // if (display_) {
+            //     display_->ShowNotification(Lang::Strings::VOLUME + std::to_string(volume));
+            // }
+        });
         volume_up_button_.OnLongPress([this]() {
             GetAudioCodec()->SetOutputVolume(100);
             // if (display_) {
@@ -616,7 +627,7 @@ public:
     // key2_button_(KEY2_BUTTON_GPIO),
     head_touch_button_(TOUCH_CHANNEL_HEAD, 0.10f),    // 触摸按钮对象创建
     nose_touch_button_(TOUCH_CHANNEL_NOSE, 0.10f),    // 触摸按钮对象创建
-    belly_touch_button_(TOUCH_CHANNEL_BELLY, 0.10f) { // 触摸按钮对象创建
+    belly_touch_button_(TOUCH_CHANNEL_BELLY, 0.05f) { // 触摸按钮对象创建
         
         // InitializeADC(); // 电池采样电路
         InitializeCodecI2c();

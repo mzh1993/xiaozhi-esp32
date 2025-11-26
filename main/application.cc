@@ -1053,14 +1053,17 @@ void Application::PeripheralWorkerTask() {
                     break;
                 case PeripheralAction::kEarSequence: {
                     if (ear) {
-                        // 关键修复：检查序列是否仍然活跃，如果已经完成则不处理
-                        // 这防止处理已完成的序列的后续步骤，避免覆盖is_last_sequence_move_标志
-                        // 这是解决"序列一直在动"问题的关键修复
-                        if (!ear->IsSequenceActive()) {
+                        // 关键修复：检查序列是否仍然活跃
+                        // 特殊情况：如果是最后一个步骤（is_last_sequence_step=true），即使序列已完成也要处理
+                        // 因为序列完成标志在OnSequenceTimer中提前设置，但最后一个步骤还需要执行
+                        // 这样才能触发stop timer，最终调用MarkSequenceCompleted
+                        bool should_process = ear->IsSequenceActive() || task_ptr->is_last_sequence_step;
+                        
+                        if (!should_process) {
                             ESP_LOGW(TAG, "[WORKER] Sequence already completed, ignoring step (action=%d, duration=%lu ms, is_last=%s)", 
                                      task_ptr->combo_action, task_ptr->duration_ms,
                                      task_ptr->is_last_sequence_step ? "true" : "false");
-                            break;  // 序列已完成，忽略此步骤
+                            break;  // 序列已完成，且不是最后一个步骤，忽略此步骤
                         }
                         
                         ear_combo_param_t combo;

@@ -8,9 +8,9 @@
 
 // ===== 电机延时参数配置 - 基于实际测试优化 =====
 // 耳朵位置控制延时参数（单位：毫秒）
-#define EAR_POSITION_DOWN_TIME_MS      200     // 耳朵从竖起到下垂所需时间
-#define EAR_POSITION_UP_TIME_MS        200     // 耳朵从下垂到竖起所需时间
-#define EAR_POSITION_MIDDLE_TIME_MS    100      // 耳朵从竖起最高点回到中间位置所需时间（从20增加到40，确保动作完整）
+#define EAR_POSITION_DOWN_TIME_MS      120     // 耳朵从竖起到下垂所需时间
+#define EAR_POSITION_UP_TIME_MS        120     // 耳朵从下垂到竖起所需时间
+#define EAR_POSITION_MIDDLE_TIME_MS    60      // 耳朵从竖起最高点回到中间位置所需时间（60ms，确保动作完整）
 
 // 场景动作延时参数
 #define SCENARIO_DEFAULT_DELAY_MS      100     // 场景步骤间默认延时（增加）
@@ -19,28 +19,23 @@
 
 // ===== 宏定义结束 =====
 
-// ===== 统一的动作/停顿时间预设（毫秒）便于全局调优（聚合版） =====
-// 动作时长（建议优先使用这几档）
-#define EAR_MOVE_TINY_MS            35
-#define EAR_MOVE_ADJUST_MS          45
-#define EAR_MOVE_SHORT_MS           150
-#define EAR_MOVE_FAST_MS            55
-#define EAR_MOVE_QUICK_MS           65
-#define EAR_MOVE_MEDIUM_MS          75
-#define EAR_MOVE_SLOW_MS            100
-#define EAR_MOVE_SLOW_PLUS_MS       120
-#define EAR_MOVE_LONG_MS            150
+// ===== 简化的动作/停顿时间预设（毫秒）- 基于三个基础参数 =====
+// 动作时长：基于位置控制参数，简化设计
+// - 小幅动作（快速摇摆）：30ms（约为 MIDDLE 的 2/3）
+// - 中幅动作（正常摇摆）：60ms（等于 MIDDLE，中间位置）
+// - 大幅动作（完全竖起/下垂）：120ms（等于 UP/DOWN，完全位置）
+#define EAR_MOVE_SMALL_MS           30   // 小幅动作，用于快速摇摆（兴奋）
+#define EAR_MOVE_MID_MS             60   // 中幅动作，基于 MIDDLE 参数
+#define EAR_MOVE_FULL_MS            120  // 大幅动作，基于 UP/DOWN 参数
 
-// 停顿时长（建议优先使用这几档）
-#define EAR_PAUSE_NONE_MS           0
-#define EAR_PAUSE_SHORT_MS          100
-#define EAR_PAUSE_MEDIUM_MS         150
-#define EAR_PAUSE_LONG_MS           200
-#define EAR_PAUSE_XLONG_MS          300
-#define EAR_PAUSE_XXLONG_MS         500
+// 停顿时长：简化设计
+#define EAR_PAUSE_NONE_MS           0    // 无停顿
+#define EAR_PAUSE_SHORT_MS          80   // 短停顿（快速摇摆时用）
+#define EAR_PAUSE_MEDIUM_MS         150  // 中等停顿（正常摇摆时用）
+#define EAR_PAUSE_LONG_MS           300  // 长停顿（情绪转换时用）
+#define EAR_PAUSE_VERY_LONG_MS      600  // 非常长停顿（坏情绪时用）
 
 // 软启动/错峰控制（供上层引用）
-#define EAR_POWER_ON_STABILIZE_MS   150   // 板级已实现电源稳定等待（参考值）
 #define EAR_START_STAGGER_MS        60    // 双耳启动错峰间隔（毫秒），建议 60–120 之间
 // 触发限频/最小时长
 #define EAR_MOVE_COOLDOWN_MS        80
@@ -171,6 +166,15 @@ private:
     static const ear_sequence_step_t loving_sequence_[];
     static const ear_sequence_step_t angry_sequence_[];
     static const ear_sequence_step_t cool_sequence_[];
+    
+    // 不同强度的情绪序列 - 基于基础序列优化
+    static const ear_sequence_step_t crying_sequence_[];      // 哭泣：比悲伤更强烈
+    static const ear_sequence_step_t furious_sequence_[];     // 狂怒：比愤怒更激烈
+    static const ear_sequence_step_t shocked_sequence_[];     // 震惊：比惊讶更强烈
+    static const ear_sequence_step_t annoyed_sequence_[];     // 烦恼：比愤怒更温和
+    static const ear_sequence_step_t embarrassed_sequence_[]; // 尴尬：短暂快速下垂
+    static const ear_sequence_step_t thinking_sequence_[];    // 思考：比好奇更慢更稳定
+    static const ear_sequence_step_t listening_sequence_[];   // 倾听：单耳交替，专注
 
     // 默认情绪映射
     static const std::map<std::string, std::vector<ear_sequence_step_t>> default_emotion_mappings_;

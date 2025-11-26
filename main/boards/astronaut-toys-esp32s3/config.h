@@ -37,6 +37,10 @@
 
 // Ear Motors Control Pins for TC118S
 #define EAR_MOTO_EN_GPIO    GPIO_NUM_45   // 耳朵电机电源使能引脚
+// #define LEFT_EAR_INA_GPIO   GPIO_NUM_16   // 左耳朵电机控制引脚A
+// #define LEFT_EAR_INB_GPIO   GPIO_NUM_15   // 左耳朵电机控制引脚B
+// #define RIGHT_EAR_INA_GPIO  GPIO_NUM_9   // 右耳朵电机控制引脚A
+// #define RIGHT_EAR_INB_GPIO  GPIO_NUM_8   // 右耳朵电机控制引脚B
 #define LEFT_EAR_INA_GPIO   GPIO_NUM_15   // 左耳朵电机控制引脚A
 #define LEFT_EAR_INB_GPIO   GPIO_NUM_16   // 左耳朵电机控制引脚B
 #define RIGHT_EAR_INA_GPIO  GPIO_NUM_8   // 右耳朵电机控制引脚A

@@ -418,6 +418,55 @@ private:
         
         ESP_LOGI(TAG, "=== Ear controller initialization completed successfully ===");
     }
+    
+    // 耳朵控制器测试函数 - 运行所有测试
+    void RunEarControllerTests() {
+        if (!ear_controller_) {
+            ESP_LOGE(TAG, "Ear controller not available for testing");
+            return;
+        }
+        
+        ESP_LOGI(TAG, "========================================");
+        ESP_LOGI(TAG, "Starting Ear Controller Test Suite");
+        ESP_LOGI(TAG, "========================================");
+        
+        // 将基类指针转换为 Tc118sEarController 以访问测试方法
+        // 注意：由于项目可能禁用RTTI，使用static_cast（因为我们知道初始化时创建的是Tc118sEarController）
+        Tc118sEarController* tc118s_controller = static_cast<Tc118sEarController*>(ear_controller_);
+        if (!tc118s_controller) {
+            ESP_LOGW(TAG, "Ear controller cast failed, skipping advanced tests");
+            ESP_LOGI(TAG, "Test suite completed");
+            return;
+        }
+        
+        // 等待一小段时间，确保系统稳定
+        vTaskDelay(pdMS_TO_TICKS(500));
+        
+        // 1. 测试基础功能（单耳控制）
+        ESP_LOGI(TAG, "\n--- Test 1: Basic Ear Functions ---");
+        tc118s_controller->TestBasicEarFunctions();
+        vTaskDelay(pdMS_TO_TICKS(1000));
+        
+        // 2. 测试位置控制
+        // ESP_LOGI(TAG, "\n--- Test 2: Ear Positions ---");
+        // tc118s_controller->TestEarPositions();
+        // vTaskDelay(pdMS_TO_TICKS(1000));
+        
+        // 3. 测试组合动作
+        // ESP_LOGI(TAG, "\n--- Test 3: Ear Combinations ---");
+        // tc118s_controller->TestEarCombinations();
+        // vTaskDelay(pdMS_TO_TICKS(1000));
+        
+        // 4. 测试情绪序列（可选，因为耗时较长）
+        // 如果需要测试情绪序列，取消下面的注释
+        ESP_LOGI(TAG, "\n--- Test 4: Emotion Sequences ---");
+        tc118s_controller->TestEarSequences();
+        vTaskDelay(pdMS_TO_TICKS(1000));
+        
+        ESP_LOGI(TAG, "========================================");
+        ESP_LOGI(TAG, "Ear Controller Test Suite Completed");
+        ESP_LOGI(TAG, "========================================");
+    }
 
     void InitializeButtons() {
         boot_button_.OnClick([this]() {
@@ -427,6 +476,19 @@ private:
                 ResetWifiConfiguration();
             }
             app.ToggleChatState();
+        });
+        
+        // 添加长按触发耳朵测试功能
+        boot_button_.OnLongPress([this]() {
+            ESP_LOGI(TAG, "Boot button long press detected - Starting ear controller test");
+            if (ear_controller_) {
+                // 在后台任务中运行测试，避免阻塞按钮回调
+                Application::GetInstance().Schedule([this]() {
+                    RunEarControllerTests();
+                });
+            } else {
+                ESP_LOGW(TAG, "Ear controller not available for testing");
+            }
         });
 
         volume_up_button_.OnClick([this]() {
@@ -640,7 +702,23 @@ public:
         // InitializeTools();
         
         // 初始化耳朵控制器（但不立即复位，等待Application启动后再复位）
-        InitializeEarController(); 
+        InitializeEarController();
+        
+        // 自动进入测试模式：延迟5秒后自动运行耳朵控制器测试
+        // 这确保系统完全初始化完成后再开始测试
+        // xTaskCreate([](void* arg) {
+        //     ESP_LOGI(TAG, "Auto test mode: Waiting 5 seconds for system initialization...");
+        //     vTaskDelay(pdMS_TO_TICKS(5000));  // 等待5秒确保系统稳定
+            
+        //     AstronautToysESP32S3* board = static_cast<AstronautToysESP32S3*>(arg);
+        //     if (board && board->ear_controller_) {
+        //         ESP_LOGI(TAG, "Auto test mode: Starting ear controller test suite...");
+        //         board->RunEarControllerTests();
+        //     } else {
+        //         ESP_LOGW(TAG, "Auto test mode: Ear controller not available, skipping tests");
+        //     }
+        //     vTaskDelete(NULL);
+        // }, "auto_ear_test", 2048, this, 1, nullptr);
 
     }
 
@@ -676,7 +754,8 @@ public:
     // }
 
     virtual EarController* GetEarController() override {
-        ESP_LOGI(TAG, "GetEarController called, returning: %s", ear_controller_ ? "valid" : "null");
+        // 屏蔽频繁调用的日志，减少干扰
+        // ESP_LOGI(TAG, "GetEarController called, returning: %s", ear_controller_ ? "valid" : "null");
         return ear_controller_;
     }
 

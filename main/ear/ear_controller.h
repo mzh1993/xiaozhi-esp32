@@ -34,9 +34,10 @@ typedef enum {
     
     // 交叉动作
     EAR_COMBO_LEFT_FORWARD_RIGHT_BACKWARD = 5,  // 左耳向前，右耳向后
+    EAR_COMBO_LEFT_BACKWARD_RIGHT_FORWARD = 6,  // 左耳向后，右耳向前
     
     // 总数
-    EAR_COMBO_COUNT = 6
+    EAR_COMBO_COUNT = 7
 } ear_combo_action_t;
 
 // 耳朵位置状态

@@ -9,117 +9,186 @@
 
 static const char *TAG = "TC118S_EAR_CONTROLLER";
 
+// 日志控制宏：屏蔽详细调试日志，专注于情绪转换观察
+// 设置为 0 可屏蔽详细日志，设置为 1 显示所有日志
+#ifndef ENABLE_VERBOSE_EAR_LOGS
+#define ENABLE_VERBOSE_EAR_LOGS 0
+#endif
+
+// 宏定义：条件编译详细日志
+#if ENABLE_VERBOSE_EAR_LOGS
+#define EAR_LOG_VERBOSE(...) ESP_LOGI(__VA_ARGS__)
+#define EAR_LOG_DEBUG(...) ESP_LOGD(__VA_ARGS__)
+#define EAR_LOG_DURATION(...) ESP_LOGI(__VA_ARGS__)
+#else
+#define EAR_LOG_VERBOSE(...) ((void)0)
+#define EAR_LOG_DEBUG(...) ((void)0)
+#define EAR_LOG_DURATION(...) ((void)0)
+#endif
+
 // Ensure FreeRTOS timers never get a 0-tick period when ms < tick resolution
 #ifndef MS_TO_TICKS_MIN1
 #define MS_TO_TICKS_MIN1(ms) ({ TickType_t __t = pdMS_TO_TICKS(ms); (__t == 0 ? (TickType_t)1 : __t); })
 #endif
 
-// 重新设计的情绪序列 - 基于时间控制，创造不同的运动节奏和表达效果
+// 重新设计的情绪序列 - 基于三个基础参数（120ms/120ms/60ms）简化设计
+// 方向映射：FORWARD(0)=朝向DOWN(下垂), BACKWARD(1)=朝向UP(竖起)
 const ear_sequence_step_t Tc118sEarController::happy_sequence_[] = {
-    // 开心：快速节奏，短时间动作，表达活泼
-    {EAR_COMBO_BOTH_FORWARD,  EAR_MOVE_QUICK_MS,  EAR_PAUSE_MEDIUM_MS},
-    {EAR_COMBO_BOTH_BACKWARD, EAR_MOVE_QUICK_MS,  EAR_PAUSE_MEDIUM_MS},
-    {EAR_COMBO_BOTH_FORWARD,  EAR_MOVE_QUICK_MS,  EAR_PAUSE_MEDIUM_MS},
-    {EAR_COMBO_BOTH_FORWARD,  EAR_MOVE_ADJUST_MS, EAR_PAUSE_NONE_MS}
+    // 一般高兴：摇摆2-3次，幅度大，最后停留在竖起位置（UP）
+    {EAR_COMBO_BOTH_BACKWARD, EAR_MOVE_FULL_MS,  EAR_PAUSE_MEDIUM_MS},  // 完全竖起（UP，120ms）
+    {EAR_COMBO_BOTH_FORWARD,  EAR_MOVE_MID_MS,   EAR_PAUSE_MEDIUM_MS},  // 中幅下垂（DOWN，60ms）
+    {EAR_COMBO_BOTH_BACKWARD, EAR_MOVE_FULL_MS,  EAR_PAUSE_NONE_MS}     // 完全竖起并停留（UP，120ms）
 };
 
 const ear_sequence_step_t Tc118sEarController::curious_sequence_[] = {
-    // 好奇：左右耳交替，中等节奏，模拟"倾听"动作
-    {EAR_COMBO_LEFT_FORWARD_RIGHT_HOLD,  EAR_MOVE_MEDIUM_MS, EAR_PAUSE_LONG_MS},
-    {EAR_COMBO_LEFT_HOLD_RIGHT_FORWARD,  EAR_MOVE_MEDIUM_MS, EAR_PAUSE_LONG_MS},
-    {EAR_COMBO_BOTH_FORWARD,             EAR_MOVE_QUICK_MS,  EAR_PAUSE_MEDIUM_MS},
-    {EAR_COMBO_BOTH_FORWARD,             EAR_MOVE_ADJUST_MS, EAR_PAUSE_NONE_MS}
+    // 好奇：使用交叉动作，左右耳相反方向运动，模拟"左顾右盼"，最后竖起（UP）
+    {EAR_COMBO_LEFT_FORWARD_RIGHT_BACKWARD, EAR_MOVE_FULL_MS, EAR_PAUSE_MEDIUM_MS},  // 左耳下垂，右耳竖起
+    {EAR_COMBO_LEFT_BACKWARD_RIGHT_FORWARD, EAR_MOVE_FULL_MS, EAR_PAUSE_MEDIUM_MS},  // 左耳竖起，右耳下垂（反向交叉）
+    {EAR_COMBO_LEFT_FORWARD_RIGHT_BACKWARD, EAR_MOVE_FULL_MS, EAR_PAUSE_MEDIUM_MS},  // 左耳下垂，右耳竖起
+    {EAR_COMBO_BOTH_BACKWARD,               EAR_MOVE_FULL_MS, EAR_PAUSE_NONE_MS}     // 最后双耳竖起（UP）
 };
 
 const ear_sequence_step_t Tc118sEarController::excited_sequence_[] = {
-    // 兴奋：超快速节奏，短时间动作，表达激动
-    {EAR_COMBO_BOTH_FORWARD,  EAR_MOVE_FAST_MS,  EAR_PAUSE_SHORT_MS},
-    {EAR_COMBO_BOTH_BACKWARD, EAR_MOVE_FAST_MS,  EAR_PAUSE_SHORT_MS},
-    {EAR_COMBO_BOTH_FORWARD,  EAR_MOVE_FAST_MS,  EAR_PAUSE_SHORT_MS},
-    {EAR_COMBO_BOTH_BACKWARD, EAR_MOVE_FAST_MS,  EAR_PAUSE_SHORT_MS},
-    {EAR_COMBO_BOTH_FORWARD,  EAR_MOVE_FAST_MS,  EAR_PAUSE_SHORT_MS},
-    {EAR_COMBO_BOTH_FORWARD,  EAR_MOVE_SHORT_MS, EAR_PAUSE_NONE_MS}
+    // 超级兴奋：短时间前后摇摆5-6次，幅度小强度大，加入交叉动作增加动感，最后竖起（UP）
+    {EAR_COMBO_BOTH_BACKWARD,                 EAR_MOVE_SMALL_MS, EAR_PAUSE_SHORT_MS},   // 小幅竖起（UP）
+    {EAR_COMBO_BOTH_FORWARD,                  EAR_MOVE_SMALL_MS, EAR_PAUSE_SHORT_MS},   // 小幅下垂（DOWN）
+    {EAR_COMBO_LEFT_BACKWARD_RIGHT_FORWARD,   EAR_MOVE_SMALL_MS, EAR_PAUSE_SHORT_MS},   // 左耳竖起，右耳下垂（交叉动作）
+    {EAR_COMBO_LEFT_FORWARD_RIGHT_BACKWARD,   EAR_MOVE_SMALL_MS, EAR_PAUSE_SHORT_MS},   // 左耳下垂，右耳竖起（反向交叉）
+    {EAR_COMBO_BOTH_BACKWARD,                 EAR_MOVE_SMALL_MS, EAR_PAUSE_SHORT_MS},   // 小幅竖起（UP）
+    {EAR_COMBO_BOTH_FORWARD,                  EAR_MOVE_SMALL_MS, EAR_PAUSE_SHORT_MS},   // 小幅下垂（DOWN）
+    {EAR_COMBO_BOTH_BACKWARD,                 EAR_MOVE_MID_MS,   EAR_PAUSE_NONE_MS}     // 中幅竖起并停留（UP）
 };
 
 const ear_sequence_step_t Tc118sEarController::playful_sequence_[] = {
-    // 顽皮：节奏变化，长短时间交替，表达调皮
-    {EAR_COMBO_BOTH_FORWARD,  EAR_MOVE_MEDIUM_MS, EAR_PAUSE_LONG_MS},
-    {EAR_COMBO_BOTH_BACKWARD, EAR_MOVE_FAST_MS,   EAR_PAUSE_SHORT_MS},
-    {EAR_COMBO_BOTH_FORWARD,  EAR_MOVE_QUICK_MS,  EAR_PAUSE_MEDIUM_MS},
-    {EAR_COMBO_BOTH_BACKWARD, EAR_MOVE_MEDIUM_MS, EAR_PAUSE_MEDIUM_MS},
-    {EAR_COMBO_BOTH_FORWARD,  EAR_MOVE_FAST_MS,   EAR_PAUSE_SHORT_MS},
-    {EAR_COMBO_BOTH_FORWARD,  EAR_MOVE_ADJUST_MS, EAR_PAUSE_NONE_MS}
+    // 顽皮：快速变化，加入交叉动作增加趣味，最后竖起（UP）
+    {EAR_COMBO_BOTH_BACKWARD,                 EAR_MOVE_MID_MS,    EAR_PAUSE_MEDIUM_MS},  // 竖起（UP）
+    {EAR_COMBO_LEFT_BACKWARD_RIGHT_FORWARD,   EAR_MOVE_MID_MS,    EAR_PAUSE_SHORT_MS},   // 左耳竖起，右耳下垂（交叉动作）
+    {EAR_COMBO_LEFT_FORWARD_RIGHT_BACKWARD,   EAR_MOVE_MID_MS,    EAR_PAUSE_SHORT_MS},   // 左耳下垂，右耳竖起（反向交叉）
+    {EAR_COMBO_BOTH_BACKWARD,                 EAR_MOVE_MID_MS,    EAR_PAUSE_NONE_MS}     // 竖起并停留（UP）
 };
 
 const ear_sequence_step_t Tc118sEarController::sad_sequence_[] = {
-    // 悲伤：慢速节奏，长时间动作，表达沉重
-    {EAR_COMBO_BOTH_BACKWARD, EAR_MOVE_SLOW_PLUS_MS,  EAR_PAUSE_XXLONG_MS},
-    {EAR_COMBO_BOTH_FORWARD,  EAR_MOVE_TINY_MS,       EAR_PAUSE_SHORT_MS},
-    {EAR_COMBO_BOTH_BACKWARD, EAR_MOVE_SLOW_PLUS_MS,  EAR_PAUSE_LONG_MS},
-    {EAR_COMBO_BOTH_FORWARD,  EAR_MOVE_TINY_MS,       EAR_PAUSE_SHORT_MS},
-    {EAR_COMBO_BOTH_BACKWARD, EAR_MOVE_SLOW_PLUS_MS,  EAR_PAUSE_MEDIUM_MS},
-    {EAR_COMBO_BOTH_FORWARD,  EAR_MOVE_SHORT_MS,      EAR_PAUSE_NONE_MS}
+    // 悲伤：缓慢的2-3次摆动，下垂幅度大（盖住眼睛），抬起幅度小，使用长停顿表达消极情绪，最后停留在下摆（DOWN）
+    {EAR_COMBO_BOTH_FORWARD,  EAR_MOVE_FULL_MS,   EAR_PAUSE_VERY_LONG_MS},  // 完全下垂（DOWN，盖住眼睛，120ms），长停顿
+    {EAR_COMBO_BOTH_BACKWARD, EAR_MOVE_SMALL_MS,  EAR_PAUSE_VERY_LONG_MS},  // 小幅抬起（UP，30ms），长停顿
+    {EAR_COMBO_BOTH_FORWARD,  EAR_MOVE_FULL_MS,   EAR_PAUSE_NONE_MS}       // 最后停留在下摆位置（DOWN，120ms）
 };
 
 const ear_sequence_step_t Tc118sEarController::surprised_sequence_[] = {
-    // 惊讶：快速竖起，然后缓慢下垂，表达"震惊"到"恢复"
-    {EAR_COMBO_BOTH_FORWARD,  EAR_MOVE_FAST_MS,   EAR_PAUSE_LONG_MS},
-    {EAR_COMBO_BOTH_BACKWARD, EAR_MOVE_SLOW_PLUS_MS, EAR_PAUSE_SHORT_MS},
-    {EAR_COMBO_BOTH_FORWARD,  EAR_MOVE_MEDIUM_MS, EAR_PAUSE_MEDIUM_MS},
-    {EAR_COMBO_BOTH_FORWARD,  EAR_MOVE_ADJUST_MS, EAR_PAUSE_NONE_MS}
+    // 惊讶：快速竖起（UP），然后缓慢下垂（DOWN），表达"震惊"到"恢复"，最后回到中间
+    {EAR_COMBO_BOTH_BACKWARD, EAR_MOVE_FULL_MS,   EAR_PAUSE_LONG_MS},   // 快速完全竖起（UP，120ms）
+    {EAR_COMBO_BOTH_FORWARD,  EAR_MOVE_FULL_MS,   EAR_PAUSE_MEDIUM_MS}, // 缓慢下垂（DOWN，120ms）
+    {EAR_COMBO_BOTH_BACKWARD, EAR_MOVE_MID_MS,    EAR_PAUSE_NONE_MS}    // 回到中间位置（UP方向，60ms）
 };
 
 const ear_sequence_step_t Tc118sEarController::sleepy_sequence_[] = {
-    // 困倦：超慢速节奏，长时间动作，表达疲惫
-    {EAR_COMBO_BOTH_BACKWARD, EAR_MOVE_LONG_MS,   EAR_PAUSE_XXLONG_MS},
-    {EAR_COMBO_BOTH_FORWARD,  EAR_MOVE_SHORT_MS,  EAR_PAUSE_LONG_MS},
-    {EAR_COMBO_BOTH_BACKWARD, EAR_MOVE_SLOW_PLUS_MS, EAR_PAUSE_XLONG_MS},
-    {EAR_COMBO_BOTH_FORWARD,  EAR_MOVE_ADJUST_MS, EAR_PAUSE_NONE_MS}
+    // 困倦：非常缓慢下垂，表达疲惫，使用长停顿，最后停留在下摆位置（DOWN）
+    {EAR_COMBO_BOTH_FORWARD,  EAR_MOVE_FULL_MS,   EAR_PAUSE_VERY_LONG_MS},  // 完全下垂（DOWN，120ms），非常长停顿
+    {EAR_COMBO_BOTH_FORWARD,  EAR_MOVE_FULL_MS,   EAR_PAUSE_NONE_MS}        // 最后停留在下摆位置（DOWN，120ms）
 };
 
 const ear_sequence_step_t Tc118sEarController::confident_sequence_[] = {
-    // 自信：稳定节奏，中等时间动作，表达坚定
-    {EAR_COMBO_BOTH_FORWARD,  EAR_MOVE_MEDIUM_MS, EAR_PAUSE_LONG_MS},
-    {EAR_COMBO_BOTH_BACKWARD, EAR_MOVE_MEDIUM_MS, EAR_PAUSE_LONG_MS},
-    {EAR_COMBO_BOTH_FORWARD,  EAR_MOVE_MEDIUM_MS, EAR_PAUSE_LONG_MS},
-    {EAR_COMBO_BOTH_FORWARD,  EAR_MOVE_SHORT_MS,  EAR_PAUSE_NONE_MS}
+    // 自信：稳定节奏，幅度中等，表达坚定，最后停留在竖起位置（UP）
+    {EAR_COMBO_BOTH_BACKWARD, EAR_MOVE_FULL_MS,   EAR_PAUSE_LONG_MS},  // 完全竖起（UP，120ms）
+    {EAR_COMBO_BOTH_FORWARD,  EAR_MOVE_MID_MS,    EAR_PAUSE_LONG_MS},  // 中幅下垂（DOWN，60ms）
+    {EAR_COMBO_BOTH_BACKWARD, EAR_MOVE_FULL_MS,   EAR_PAUSE_LONG_MS},  // 完全竖起（UP，120ms）
+    {EAR_COMBO_BOTH_BACKWARD, EAR_MOVE_FULL_MS,   EAR_PAUSE_NONE_MS}   // 停留在竖起位置（UP，120ms）
 };
 
 const ear_sequence_step_t Tc118sEarController::confused_sequence_[] = {
-    // 困惑：不规则节奏，时间变化，表达混乱
-    {EAR_COMBO_LEFT_FORWARD_RIGHT_BACKWARD, EAR_MOVE_MEDIUM_MS, EAR_PAUSE_LONG_MS},
-    {EAR_COMBO_LEFT_FORWARD_RIGHT_BACKWARD, EAR_MOVE_MEDIUM_MS, EAR_PAUSE_MEDIUM_MS},
-    {EAR_COMBO_BOTH_FORWARD,               EAR_MOVE_QUICK_MS,  EAR_PAUSE_SHORT_MS},
-    {EAR_COMBO_BOTH_BACKWARD,              EAR_MOVE_MEDIUM_MS, EAR_PAUSE_MEDIUM_MS},
-    {EAR_COMBO_BOTH_FORWARD,               EAR_MOVE_ADJUST_MS, EAR_PAUSE_NONE_MS}
+    // 困惑：不规则节奏，使用正反向交叉动作，表达混乱，最后统一竖起（UP）
+    {EAR_COMBO_LEFT_FORWARD_RIGHT_BACKWARD, EAR_MOVE_MID_MS,    EAR_PAUSE_MEDIUM_MS},  // 左耳下垂，右耳竖起
+    {EAR_COMBO_LEFT_BACKWARD_RIGHT_FORWARD, EAR_MOVE_MID_MS,    EAR_PAUSE_MEDIUM_MS},  // 左耳竖起，右耳下垂（反向）
+    {EAR_COMBO_LEFT_FORWARD_RIGHT_BACKWARD, EAR_MOVE_SMALL_MS,  EAR_PAUSE_SHORT_MS},   // 快速交叉
+    {EAR_COMBO_LEFT_BACKWARD_RIGHT_FORWARD, EAR_MOVE_MID_MS,    EAR_PAUSE_MEDIUM_MS},  // 反向交叉
+    {EAR_COMBO_BOTH_BACKWARD,               EAR_MOVE_MID_MS,    EAR_PAUSE_NONE_MS}     // 最后统一竖起（UP）
 };
 
 const ear_sequence_step_t Tc118sEarController::loving_sequence_[] = {
-    // 爱意：温柔节奏，中等时间动作，表达温柔
-    {EAR_COMBO_BOTH_FORWARD,  EAR_MOVE_MEDIUM_MS, EAR_PAUSE_LONG_MS},
-    {EAR_COMBO_BOTH_BACKWARD, EAR_MOVE_MEDIUM_MS, EAR_PAUSE_LONG_MS},
-    {EAR_COMBO_BOTH_FORWARD,  EAR_MOVE_MEDIUM_MS, EAR_PAUSE_LONG_MS},
-    {EAR_COMBO_BOTH_FORWARD,  EAR_MOVE_SHORT_MS,  EAR_PAUSE_NONE_MS}
+    // 爱意：温柔节奏，幅度中等，表达温柔，最后停留在竖起位置（UP）
+    {EAR_COMBO_BOTH_BACKWARD, EAR_MOVE_MID_MS,    EAR_PAUSE_LONG_MS},  // 竖起（UP）
+    {EAR_COMBO_BOTH_FORWARD,  EAR_MOVE_MID_MS,    EAR_PAUSE_LONG_MS},  // 下垂（DOWN）
+    {EAR_COMBO_BOTH_BACKWARD, EAR_MOVE_MID_MS,    EAR_PAUSE_LONG_MS},  // 竖起（UP）
+    {EAR_COMBO_BOTH_BACKWARD, EAR_MOVE_MID_MS,    EAR_PAUSE_NONE_MS}   // 停留在竖起位置（UP）
 };
 
 const ear_sequence_step_t Tc118sEarController::angry_sequence_[] = {
-    // 愤怒：快速节奏，短时间动作，表达激烈
-    {EAR_COMBO_BOTH_FORWARD,  EAR_MOVE_FAST_MS,  EAR_PAUSE_SHORT_MS},
-    {EAR_COMBO_BOTH_BACKWARD, EAR_MOVE_FAST_MS,  EAR_PAUSE_SHORT_MS},
-    {EAR_COMBO_BOTH_FORWARD,  EAR_MOVE_FAST_MS,  EAR_PAUSE_SHORT_MS},
-    {EAR_COMBO_BOTH_BACKWARD, EAR_MOVE_FAST_MS,  EAR_PAUSE_SHORT_MS},
-    {EAR_COMBO_BOTH_FORWARD,  EAR_MOVE_FAST_MS,  EAR_PAUSE_SHORT_MS},
-    {EAR_COMBO_BOTH_BACKWARD, EAR_MOVE_FAST_MS,  EAR_PAUSE_SHORT_MS},
-    {EAR_COMBO_BOTH_FORWARD,  EAR_MOVE_FAST_MS,  EAR_PAUSE_SHORT_MS},
-    {EAR_COMBO_BOTH_FORWARD,  EAR_MOVE_ADJUST_MS, EAR_PAUSE_NONE_MS}
+    // 愤怒：快速节奏，小幅快速摆动，表达激烈，最后停留在中间偏下位置（DOWN）
+    {EAR_COMBO_BOTH_BACKWARD, EAR_MOVE_SMALL_MS,  EAR_PAUSE_SHORT_MS},  // 小幅竖起（UP）
+    {EAR_COMBO_BOTH_FORWARD,  EAR_MOVE_SMALL_MS,  EAR_PAUSE_SHORT_MS},  // 小幅下垂（DOWN）
+    {EAR_COMBO_BOTH_BACKWARD, EAR_MOVE_SMALL_MS,  EAR_PAUSE_SHORT_MS},  // 小幅竖起（UP）
+    {EAR_COMBO_BOTH_FORWARD,  EAR_MOVE_SMALL_MS,  EAR_PAUSE_SHORT_MS},  // 小幅下垂（DOWN）
+    {EAR_COMBO_BOTH_BACKWARD, EAR_MOVE_SMALL_MS,  EAR_PAUSE_SHORT_MS},  // 小幅竖起（UP）
+    {EAR_COMBO_BOTH_FORWARD,  EAR_MOVE_MID_MS,    EAR_PAUSE_NONE_MS}    // 中幅下垂并停留（DOWN）
 };
 
 const ear_sequence_step_t Tc118sEarController::cool_sequence_[] = {
-    // 酷：慢速节奏，长时间动作，表达冷静
-    {EAR_COMBO_BOTH_FORWARD,  EAR_MOVE_SLOW_MS,  EAR_PAUSE_XLONG_MS},
-    {EAR_COMBO_BOTH_BACKWARD, EAR_MOVE_SLOW_MS,  EAR_PAUSE_XLONG_MS},
-    {EAR_COMBO_BOTH_FORWARD,  EAR_MOVE_SLOW_MS,  EAR_PAUSE_XLONG_MS},
-    {EAR_COMBO_BOTH_FORWARD,  EAR_MOVE_QUICK_MS, EAR_PAUSE_NONE_MS}
+    // 酷：慢速节奏，幅度大，表达冷静，最后停留在竖起位置（UP）
+    {EAR_COMBO_BOTH_BACKWARD, EAR_MOVE_FULL_MS,   EAR_PAUSE_LONG_MS},  // 完全竖起（UP，120ms）
+    {EAR_COMBO_BOTH_FORWARD,  EAR_MOVE_MID_MS,    EAR_PAUSE_LONG_MS},  // 中幅下垂（DOWN，60ms）
+    {EAR_COMBO_BOTH_BACKWARD, EAR_MOVE_FULL_MS,   EAR_PAUSE_LONG_MS},  // 完全竖起（UP，120ms）
+    {EAR_COMBO_BOTH_BACKWARD, EAR_MOVE_FULL_MS,   EAR_PAUSE_NONE_MS}   // 停留在竖起位置（UP，120ms）
+};
+
+// 新增：不同强度情绪序列 - 基于基础序列优化
+const ear_sequence_step_t Tc118sEarController::crying_sequence_[] = {
+    // 哭泣：比悲伤更强烈，但保持简洁，使用长停顿表达消极情绪，最后停留在下摆位置（DOWN）
+    {EAR_COMBO_BOTH_FORWARD,  EAR_MOVE_FULL_MS,   EAR_PAUSE_VERY_LONG_MS},  // 完全下垂（DOWN，120ms），非常长停顿
+    {EAR_COMBO_BOTH_BACKWARD, EAR_MOVE_SMALL_MS,  EAR_PAUSE_VERY_LONG_MS},  // 小幅抬起（UP，30ms），非常长停顿
+    {EAR_COMBO_BOTH_FORWARD,  EAR_MOVE_FULL_MS,   EAR_PAUSE_NONE_MS}       // 最后停留在下摆位置（DOWN，120ms）
+};
+
+const ear_sequence_step_t Tc118sEarController::furious_sequence_[] = {
+    // 狂怒：比愤怒更激烈，更多次快速摆动，加入交叉动作，最后停留在中间偏下位置（DOWN）
+    {EAR_COMBO_BOTH_BACKWARD,                 EAR_MOVE_SMALL_MS,  EAR_PAUSE_SHORT_MS},  // 小幅竖起（UP）
+    {EAR_COMBO_BOTH_FORWARD,                  EAR_MOVE_SMALL_MS,  EAR_PAUSE_SHORT_MS},  // 小幅下垂（DOWN）
+    {EAR_COMBO_LEFT_BACKWARD_RIGHT_FORWARD,   EAR_MOVE_SMALL_MS,  EAR_PAUSE_SHORT_MS},  // 左耳竖起，右耳下垂（交叉动作）
+    {EAR_COMBO_LEFT_FORWARD_RIGHT_BACKWARD,   EAR_MOVE_SMALL_MS,  EAR_PAUSE_SHORT_MS},  // 左耳下垂，右耳竖起（反向交叉）
+    {EAR_COMBO_BOTH_BACKWARD,                 EAR_MOVE_SMALL_MS,  EAR_PAUSE_SHORT_MS},  // 小幅竖起（UP）
+    {EAR_COMBO_BOTH_FORWARD,                  EAR_MOVE_SMALL_MS,  EAR_PAUSE_SHORT_MS},  // 小幅下垂（DOWN）
+    {EAR_COMBO_BOTH_BACKWARD,                 EAR_MOVE_SMALL_MS,  EAR_PAUSE_SHORT_MS},  // 小幅竖起（UP）
+    {EAR_COMBO_BOTH_FORWARD,                  EAR_MOVE_MID_MS,    EAR_PAUSE_NONE_MS}    // 中幅下垂并停留（DOWN）
+};
+
+const ear_sequence_step_t Tc118sEarController::shocked_sequence_[] = {
+    // 震惊：比惊讶更强烈，快速竖起并保持更久，然后缓慢恢复，最后回到中间位置
+    {EAR_COMBO_BOTH_BACKWARD, EAR_MOVE_FULL_MS,   EAR_PAUSE_LONG_MS},  // 快速完全竖起（UP，120ms）
+    {EAR_COMBO_BOTH_BACKWARD, EAR_MOVE_FULL_MS,   EAR_PAUSE_LONG_MS},  // 保持竖起（UP，增加一次，更强烈）
+    {EAR_COMBO_BOTH_FORWARD,  EAR_MOVE_FULL_MS,   EAR_PAUSE_MEDIUM_MS}, // 缓慢下垂（DOWN，120ms）
+    {EAR_COMBO_BOTH_BACKWARD, EAR_MOVE_MID_MS,    EAR_PAUSE_NONE_MS}    // 回到中间位置（UP方向，60ms）
+};
+
+const ear_sequence_step_t Tc118sEarController::annoyed_sequence_[] = {
+    // 烦恼：比愤怒更温和，摆动次数更少，节奏稍慢，最后停留在中间偏下位置（DOWN）
+    {EAR_COMBO_BOTH_BACKWARD, EAR_MOVE_SMALL_MS,  EAR_PAUSE_MEDIUM_MS},  // 小幅竖起（UP）
+    {EAR_COMBO_BOTH_FORWARD,  EAR_MOVE_SMALL_MS,  EAR_PAUSE_MEDIUM_MS},  // 小幅下垂（DOWN）
+    {EAR_COMBO_BOTH_BACKWARD, EAR_MOVE_SMALL_MS,  EAR_PAUSE_MEDIUM_MS},  // 小幅竖起（UP）
+    {EAR_COMBO_BOTH_FORWARD,  EAR_MOVE_SMALL_MS,  EAR_PAUSE_MEDIUM_MS},  // 小幅下垂（DOWN）
+    {EAR_COMBO_BOTH_FORWARD,  EAR_MOVE_MID_MS,    EAR_PAUSE_NONE_MS}     // 中幅下垂并停留（DOWN）
+};
+
+const ear_sequence_step_t Tc118sEarController::embarrassed_sequence_[] = {
+    // 尴尬：缓慢下垂，表达害羞，使用长停顿，最后停留在下摆位置（DOWN）
+    {EAR_COMBO_BOTH_FORWARD,  EAR_MOVE_FULL_MS,   EAR_PAUSE_VERY_LONG_MS},  // 缓慢下垂（DOWN，120ms），非常长停顿
+    {EAR_COMBO_BOTH_FORWARD,  EAR_MOVE_FULL_MS,   EAR_PAUSE_NONE_MS}       // 最后停留在下摆位置（DOWN，120ms）
+};
+
+const ear_sequence_step_t Tc118sEarController::thinking_sequence_[] = {
+    // 思考：比好奇更慢更稳定，左右交替更慢，表达深思，最后双耳竖起（UP）
+    {EAR_COMBO_LEFT_FORWARD_RIGHT_BACKWARD, EAR_MOVE_FULL_MS, EAR_PAUSE_LONG_MS},  // 左耳下垂，右耳竖起，更慢
+    {EAR_COMBO_LEFT_BACKWARD_RIGHT_FORWARD, EAR_MOVE_FULL_MS, EAR_PAUSE_LONG_MS},  // 左耳竖起，右耳下垂，更慢
+    {EAR_COMBO_LEFT_FORWARD_RIGHT_BACKWARD, EAR_MOVE_FULL_MS, EAR_PAUSE_LONG_MS},  // 左耳下垂，右耳竖起，更慢
+    {EAR_COMBO_BOTH_BACKWARD,               EAR_MOVE_FULL_MS, EAR_PAUSE_NONE_MS}   // 最后双耳竖起（UP）
+};
+
+const ear_sequence_step_t Tc118sEarController::listening_sequence_[] = {
+    // 倾听：比好奇更专注，单耳交替竖起，节奏适中，最后双耳竖起（UP）
+    // 使用交叉动作实现单耳交替竖起效果：一只耳朵竖起（UP），另一只下垂（DOWN）
+    {EAR_COMBO_LEFT_BACKWARD_RIGHT_FORWARD, EAR_MOVE_FULL_MS, EAR_PAUSE_MEDIUM_MS},  // 左耳竖起（UP），右耳下垂（DOWN）
+    {EAR_COMBO_LEFT_FORWARD_RIGHT_BACKWARD, EAR_MOVE_FULL_MS, EAR_PAUSE_MEDIUM_MS},  // 左耳下垂（DOWN），右耳竖起（UP）
+    {EAR_COMBO_LEFT_BACKWARD_RIGHT_FORWARD, EAR_MOVE_FULL_MS, EAR_PAUSE_MEDIUM_MS},  // 左耳竖起（UP），右耳下垂（DOWN，重复）
+    {EAR_COMBO_LEFT_FORWARD_RIGHT_BACKWARD, EAR_MOVE_FULL_MS, EAR_PAUSE_MEDIUM_MS},  // 左耳下垂（DOWN），右耳竖起（UP，重复）
+    {EAR_COMBO_BOTH_BACKWARD,               EAR_MOVE_FULL_MS, EAR_PAUSE_NONE_MS}     // 最后双耳竖起（UP）
 };
 
 // 默认情绪映射 - 基于时间控制的情绪表达
@@ -147,24 +216,24 @@ const std::map<std::string, std::vector<ear_sequence_step_t>> Tc118sEarControlle
     
     // ===== 悲伤类情绪 - 慢速节奏 =====
     {"sad", {std::vector<ear_sequence_step_t>(sad_sequence_, sad_sequence_ + sizeof(sad_sequence_)/sizeof(sad_sequence_[0]))}},
-    {"crying", {std::vector<ear_sequence_step_t>(sad_sequence_, sad_sequence_ + sizeof(sad_sequence_)/sizeof(sad_sequence_[0]))}},           // 哭泣：用悲伤序列
-    {"embarrassed", {std::vector<ear_sequence_step_t>(sad_sequence_, sad_sequence_ + sizeof(sad_sequence_)/sizeof(sad_sequence_[0]))}},     // 尴尬：用悲伤序列
+    {"crying", {std::vector<ear_sequence_step_t>(crying_sequence_, crying_sequence_ + sizeof(crying_sequence_)/sizeof(crying_sequence_[0]))}},           // 哭泣：使用专门的哭泣序列（更强烈）
+    {"embarrassed", {std::vector<ear_sequence_step_t>(embarrassed_sequence_, embarrassed_sequence_ + sizeof(embarrassed_sequence_)/sizeof(embarrassed_sequence_[0]))}},     // 尴尬：使用专门的尴尬序列（短暂快速下垂）
     {"disappointed", {std::vector<ear_sequence_step_t>(sad_sequence_, sad_sequence_ + sizeof(sad_sequence_)/sizeof(sad_sequence_[0]))}},   // 失望：用悲伤序列
     
     // ===== 惊讶类情绪 - 快速到慢速 =====
     {"surprised", {std::vector<ear_sequence_step_t>(surprised_sequence_, surprised_sequence_ + sizeof(surprised_sequence_)/sizeof(surprised_sequence_[0]))}},
-    {"shocked", {std::vector<ear_sequence_step_t>(surprised_sequence_, surprised_sequence_ + sizeof(surprised_sequence_)/sizeof(surprised_sequence_[0]))}}, // 震惊：用惊讶序列
+    {"shocked", {std::vector<ear_sequence_step_t>(shocked_sequence_, shocked_sequence_ + sizeof(shocked_sequence_)/sizeof(shocked_sequence_[0]))}}, // 震惊：使用专门的震惊序列（更强烈，保持更久）
     {"amazed", {std::vector<ear_sequence_step_t>(surprised_sequence_, surprised_sequence_ + sizeof(surprised_sequence_)/sizeof(surprised_sequence_[0]))}}, // 惊讶：用惊讶序列
     
     // ===== 愤怒类情绪 - 快速节奏 =====
     {"angry", {std::vector<ear_sequence_step_t>(angry_sequence_, angry_sequence_ + sizeof(angry_sequence_)/sizeof(angry_sequence_[0]))}},
-    {"furious", {std::vector<ear_sequence_step_t>(angry_sequence_, angry_sequence_ + sizeof(angry_sequence_)/sizeof(angry_sequence_[0]))}},     // 愤怒：用愤怒序列
-    {"annoyed", {std::vector<ear_sequence_step_t>(angry_sequence_, angry_sequence_ + sizeof(angry_sequence_)/sizeof(angry_sequence_[0]))}},   // 烦恼：用愤怒序列
+    {"furious", {std::vector<ear_sequence_step_t>(furious_sequence_, furious_sequence_ + sizeof(furious_sequence_)/sizeof(furious_sequence_[0]))}},     // 狂怒：使用专门的狂怒序列（更激烈，有交叉动作）
+    {"annoyed", {std::vector<ear_sequence_step_t>(annoyed_sequence_, annoyed_sequence_ + sizeof(annoyed_sequence_)/sizeof(annoyed_sequence_[0]))}},   // 烦恼：使用专门的烦恼序列（更温和）
     
     // ===== 好奇类情绪 - 左右交替 =====
     {"curious", {std::vector<ear_sequence_step_t>(curious_sequence_, curious_sequence_ + sizeof(curious_sequence_)/sizeof(curious_sequence_[0]))}},
-    {"thinking", {std::vector<ear_sequence_step_t>(curious_sequence_, curious_sequence_ + sizeof(curious_sequence_)/sizeof(curious_sequence_[0]))}},  // 思考：用好奇序列
-    {"listening", {std::vector<ear_sequence_step_t>(curious_sequence_, curious_sequence_ + sizeof(curious_sequence_)/sizeof(curious_sequence_[0]))}}, // 倾听：用好奇序列
+    {"thinking", {std::vector<ear_sequence_step_t>(thinking_sequence_, thinking_sequence_ + sizeof(thinking_sequence_)/sizeof(thinking_sequence_[0]))}},  // 思考：使用专门的思考序列（更慢更稳定）
+    {"listening", {std::vector<ear_sequence_step_t>(listening_sequence_, listening_sequence_ + sizeof(listening_sequence_)/sizeof(listening_sequence_[0]))}}, // 倾听：使用专门的倾听序列（单耳交替，专注）
     
     // ===== 爱意类情绪 - 温柔节奏 =====
     {"loving", {std::vector<ear_sequence_step_t>(loving_sequence_, loving_sequence_ + sizeof(loving_sequence_)/sizeof(loving_sequence_[0]))}},
@@ -365,12 +434,14 @@ void Tc118sEarController::SetGpioLevels(bool left_ear, ear_action_t action) {
             gpio_set_level(inb_pin, 0);
             break;
         case EAR_ACTION_FORWARD:
-            gpio_set_level(ina_pin, 1);
-            gpio_set_level(inb_pin, 0);
-            break;
-        case EAR_ACTION_BACKWARD:
+            // 修改：交换 GPIO 映射，使 FORWARD 朝向 DOWN（下垂）
             gpio_set_level(ina_pin, 0);
             gpio_set_level(inb_pin, 1);
+            break;
+        case EAR_ACTION_BACKWARD:
+            // 修改：交换 GPIO 映射，使 BACKWARD 朝向 UP（竖起）
+            gpio_set_level(ina_pin, 1);
+            gpio_set_level(inb_pin, 0);
             break;
         case EAR_ACTION_BRAKE:
             gpio_set_level(ina_pin, 1);
@@ -394,7 +465,7 @@ esp_err_t Tc118sEarController::MoveEar(bool left_ear, ear_action_param_t action)
         ESP_LOGD(TAG, "Moving %s ear: action=%d, duration=%lu ms", 
                  left_ear ? "left" : "right", action.action, action.duration_ms);
     } else {
-        ESP_LOGI(TAG, "Moving %s ear: action=%d, duration=%lu ms", 
+        EAR_LOG_VERBOSE(TAG, "Moving %s ear: action=%d, duration=%lu ms", 
                  left_ear ? "left" : "right", action.action, action.duration_ms);
     }
     
@@ -434,7 +505,7 @@ esp_err_t Tc118sEarController::StopBoth() {
             ESP_LOGW(TAG, "[DURATION] Action duration mismatch: scheduled=%lu ms, actual=%" PRIu64 " ms, error=%" PRId64 " ms (action=%d)", 
                      scheduled_duration_ms_, actual_duration_ms, duration_error_ms, current_combo_action_);
         } else {
-            ESP_LOGI(TAG, "[DURATION] Action duration: scheduled=%lu ms, actual=%" PRIu64 " ms, error=%" PRId64 " ms (action=%d)", 
+            EAR_LOG_DURATION(TAG, "[DURATION] Action duration: scheduled=%lu ms, actual=%" PRIu64 " ms, error=%" PRId64 " ms (action=%d)", 
                      scheduled_duration_ms_, actual_duration_ms, duration_error_ms, current_combo_action_);
         }
         
@@ -515,9 +586,8 @@ esp_err_t Tc118sEarController::MoveBoth(ear_combo_param_t combo) {
         // 记录动作切换时的持续时间信息
         uint64_t switch_time_ms = esp_timer_get_time() / 1000;
         if (previous_start_time_ms > 0) {
-            uint64_t previous_elapsed_ms = switch_time_ms - previous_start_time_ms;
-            ESP_LOGI(TAG, "[DURATION] Action change: %d -> %d, previous action elapsed=%" PRIu64 " ms", 
-                     previous_action, combo.combo_action, previous_elapsed_ms);
+            EAR_LOG_DURATION(TAG, "[DURATION] Action change: %d -> %d, previous action elapsed=%" PRIu64 " ms", 
+                     previous_action, combo.combo_action, switch_time_ms - previous_start_time_ms);
             
             // 如果上一个动作还没执行完就被切换，记录警告
             if (gpio_set_time_ms_ > 0 && scheduled_duration_ms_ > 0) {
@@ -549,7 +619,7 @@ esp_err_t Tc118sEarController::MoveBoth(ear_combo_param_t combo) {
 
     last_move_tick_ms_ = now_ms;
 
-    ESP_LOGI(TAG, "Moving both ears: combo=%d, duration=%lu ms", 
+    EAR_LOG_VERBOSE(TAG, "Moving both ears: combo=%d, duration=%lu ms", 
              combo.combo_action, duration_ms);
     
     // 记录计划持续时间（用于后续验证）
@@ -573,7 +643,7 @@ esp_err_t Tc118sEarController::MoveBoth(ear_combo_param_t combo) {
             gpio_set_time_ms_ = esp_timer_get_time() / 1000;
             SetGpioLevels(true, EAR_ACTION_FORWARD);
             // 右耳保持当前状态，不改变
-            ESP_LOGD(TAG, "[DURATION] GPIO set at: %" PRIu64 " ms, scheduled duration: %lu ms", 
+            EAR_LOG_DURATION(TAG, "[DURATION] GPIO set at: %" PRIu64 " ms, scheduled duration: %lu ms", 
                      gpio_set_time_ms_, scheduled_duration_ms_);
             break;
             
@@ -582,7 +652,7 @@ esp_err_t Tc118sEarController::MoveBoth(ear_combo_param_t combo) {
             // 记录 GPIO 设置时间
             gpio_set_time_ms_ = esp_timer_get_time() / 1000;
             SetGpioLevels(false, EAR_ACTION_FORWARD);
-            ESP_LOGD(TAG, "[DURATION] GPIO set at: %" PRIu64 " ms, scheduled duration: %lu ms", 
+            EAR_LOG_DURATION(TAG, "[DURATION] GPIO set at: %" PRIu64 " ms, scheduled duration: %lu ms", 
                      gpio_set_time_ms_, scheduled_duration_ms_);
             break;
             
@@ -591,7 +661,16 @@ esp_err_t Tc118sEarController::MoveBoth(ear_combo_param_t combo) {
             gpio_set_time_ms_ = esp_timer_get_time() / 1000;
             SetGpioLevels(true, EAR_ACTION_FORWARD);
             SetGpioLevels(false, EAR_ACTION_BACKWARD);
-            ESP_LOGD(TAG, "[DURATION] GPIO set at: %" PRIu64 " ms, scheduled duration: %lu ms", 
+            EAR_LOG_DURATION(TAG, "[DURATION] GPIO set at: %" PRIu64 " ms, scheduled duration: %lu ms", 
+                     gpio_set_time_ms_, scheduled_duration_ms_);
+            break;
+            
+        case EAR_COMBO_LEFT_BACKWARD_RIGHT_FORWARD:
+            // 记录 GPIO 设置时间
+            gpio_set_time_ms_ = esp_timer_get_time() / 1000;
+            SetGpioLevels(true, EAR_ACTION_BACKWARD);
+            SetGpioLevels(false, EAR_ACTION_FORWARD);
+            EAR_LOG_DURATION(TAG, "[DURATION] GPIO set at: %" PRIu64 " ms, scheduled duration: %lu ms", 
                      gpio_set_time_ms_, scheduled_duration_ms_);
             break;
             
@@ -620,18 +699,22 @@ esp_err_t Tc118sEarController::SetEarPosition(bool left_ear, ear_position_t posi
     
     switch (position) {
         case EAR_POSITION_DOWN:
-            action = {EAR_ACTION_BACKWARD, EAR_POSITION_DOWN_TIME_MS};
+            // 修改：FORWARD 现在朝向 DOWN（下垂）
+            action = {EAR_ACTION_FORWARD, EAR_POSITION_DOWN_TIME_MS};
             break;
         case EAR_POSITION_UP:
-            action = {EAR_ACTION_FORWARD, EAR_POSITION_UP_TIME_MS};
+            // 修改：BACKWARD 现在朝向 UP（竖起）
+            action = {EAR_ACTION_BACKWARD, EAR_POSITION_UP_TIME_MS};
             break;
         case EAR_POSITION_MIDDLE: {
             // 根据当前位置计算需要的动作
             ear_position_t current = GetEarPosition(left_ear);
             if (current == EAR_POSITION_UP) {
-                action = {EAR_ACTION_BACKWARD, EAR_POSITION_MIDDLE_TIME_MS};
-            } else {
+                // 从 UP 到 MIDDLE：使用 FORWARD（朝 DOWN 方向）
                 action = {EAR_ACTION_FORWARD, EAR_POSITION_MIDDLE_TIME_MS};
+            } else {
+                // 从 DOWN 到 MIDDLE：使用 BACKWARD（朝 UP 方向）
+                action = {EAR_ACTION_BACKWARD, EAR_POSITION_MIDDLE_TIME_MS};
             }
             break;
         }
@@ -687,7 +770,7 @@ esp_err_t Tc118sEarController::PlaySequence(const ear_sequence_step_t* steps, ui
     for (uint8_t i = 0; i < count; i++) {
         current_sequence_.push_back(steps[i]);
         // 添加调试日志：验证序列数据是否正确
-        ESP_LOGD(TAG, "[SEQUENCE] Load step %d: action=%d, duration=%lu ms, delay=%lu ms", 
+        EAR_LOG_DEBUG(TAG, "[SEQUENCE] Load step %d: action=%d, duration=%lu ms, delay=%lu ms", 
                  i + 1, static_cast<int>(steps[i].combo_action), steps[i].duration_ms, steps[i].delay_ms);
     }
     
@@ -699,12 +782,12 @@ esp_err_t Tc118sEarController::PlaySequence(const ear_sequence_step_t* steps, ui
     // 启动定时器
     xTimerStart(sequence_timer_, 0);
     
-    ESP_LOGI(TAG, "Started sequence with %d steps, loop: %s", count, loop ? "true" : "false");
+    EAR_LOG_VERBOSE(TAG, "Started sequence with %d steps, loop: %s", count, loop ? "true" : "false");
     return ESP_OK;
 }
 
 esp_err_t Tc118sEarController::StopSequence() {
-    ESP_LOGI(TAG, "StopSequence called: sequence_active=%s, emotion_action_active=%s", 
+    EAR_LOG_VERBOSE(TAG, "StopSequence called: sequence_active=%s, emotion_action_active=%s", 
              sequence_active_ ? "true" : "false", emotion_action_active_ ? "true" : "false");
     
     // 无论是否有活跃序列，都应该重置 emotion_action_active_ 状态
@@ -719,7 +802,7 @@ esp_err_t Tc118sEarController::StopSequence() {
         StopBoth();
         ESP_LOGI(TAG, "Sequence stopped and state reset");
     } else {
-        ESP_LOGI(TAG, "No active sequence to stop");
+        EAR_LOG_VERBOSE(TAG, "No active sequence to stop");
     }
     
     // 无条件重置情绪激活状态，确保下次可以触发
@@ -756,7 +839,7 @@ esp_err_t Tc118sEarController::TriggerEmotion(const char* emotion) {
     
     // 检查是否应该触发情绪
     if (!ShouldTriggerEmotion(emotion)) {
-        ESP_LOGI(TAG, "Emotion trigger skipped for: %s", emotion);
+        EAR_LOG_VERBOSE(TAG, "Emotion trigger skipped for: %s", emotion);
         return ESP_OK;
     }
     
@@ -775,16 +858,13 @@ esp_err_t Tc118sEarController::TriggerEmotion(const char* emotion) {
     for (size_t i = 0; i < sequence.size(); ++i) {
         // 直接访问结构体成员，避免可能的对齐问题
         const ear_sequence_step_t& step = sequence[i];
-        uint32_t duration_value = step.duration_ms;
-        uint32_t delay_value = step.delay_ms;
-        int action_value = static_cast<int>(step.combo_action);
         
-        ESP_LOGI(TAG, "[EMOTION]   Step %d: action=%d, duration=%lu ms, delay=%lu ms", 
-                 static_cast<int>(i + 1), action_value, duration_value, delay_value);
+        EAR_LOG_VERBOSE(TAG, "[EMOTION]   Step %d: action=%d, duration=%lu ms, delay=%lu ms", 
+                 static_cast<int>(i + 1), static_cast<int>(step.combo_action), step.duration_ms, step.delay_ms);
         
         // 额外验证：打印结构体地址和内存内容（调试用）
-        ESP_LOGD(TAG, "[EMOTION]     Step ptr=%p, sizeof(step)=%zu, action=%d, duration=%lu, delay=%lu", 
-                 static_cast<const void*>(&step), sizeof(step), action_value, duration_value, delay_value);
+        EAR_LOG_DEBUG(TAG, "[EMOTION]     Step ptr=%p, sizeof(step)=%zu, action=%d, duration=%lu, delay=%lu", 
+                 static_cast<const void*>(&step), sizeof(step), static_cast<int>(step.combo_action), step.duration_ms, step.delay_ms);
     }
     
     // 更新情绪状态
@@ -828,15 +908,16 @@ void Tc118sEarController::InitializeDefaultEmotionMappings() {
         
         // 验证序列数据是否正确（特别检查 sad 情绪）
         if (pair.first == "sad" && !pair.second.empty()) {
-            ESP_LOGI(TAG, "[EMOTION] Loading 'sad' emotion with %d steps", static_cast<int>(pair.second.size()));
+            // 调试日志：只在详细日志模式下显示
+            EAR_LOG_DEBUG(TAG, "[EMOTION] Loading 'sad' emotion with %d steps", static_cast<int>(pair.second.size()));
             
             // 直接检查原始数组数据
-            ESP_LOGI(TAG, "[EMOTION] Original sad_sequence_[0]: action=%d, duration=%lu, delay=%lu", 
+            EAR_LOG_DEBUG(TAG, "[EMOTION] Original sad_sequence_[0]: action=%d, duration=%lu, delay=%lu", 
                      static_cast<int>(sad_sequence_[0].combo_action), 
                      sad_sequence_[0].duration_ms, sad_sequence_[0].delay_ms);
             
             // 检查复制后的 vector 数据
-            ESP_LOGI(TAG, "[EMOTION] Copied vector[0]: action=%d, duration=%lu, delay=%lu", 
+            EAR_LOG_DEBUG(TAG, "[EMOTION] Copied vector[0]: action=%d, duration=%lu, delay=%lu", 
                      static_cast<int>(pair.second[0].combo_action), 
                      pair.second[0].duration_ms, pair.second[0].delay_ms);
             
@@ -847,13 +928,12 @@ void Tc118sEarController::InitializeDefaultEmotionMappings() {
             }
         }
         
-        ESP_LOGD(TAG, "[EMOTION] Loaded emotion '%s' with %d steps", 
+        EAR_LOG_DEBUG(TAG, "[EMOTION] Loaded emotion '%s' with %d steps", 
                  pair.first.c_str(), static_cast<int>(pair.second.size()));
         for (size_t i = 0; i < pair.second.size(); ++i) {
-            const ear_sequence_step_t& step = pair.second[i];
-            ESP_LOGD(TAG, "[EMOTION]   Step %d: action=%d, duration=%lu ms, delay=%lu ms", 
-                     static_cast<int>(i + 1), static_cast<int>(step.combo_action), 
-                     step.duration_ms, step.delay_ms);
+            EAR_LOG_DEBUG(TAG, "[EMOTION]   Step %d: action=%d, duration=%lu ms, delay=%lu ms", 
+                     static_cast<int>(i + 1), static_cast<int>(pair.second[i].combo_action), 
+                     pair.second[i].duration_ms, pair.second[i].delay_ms);
         }
     }
     ESP_LOGI(TAG, "Default emotion mappings initialized");
@@ -883,7 +963,7 @@ void Tc118sEarController::OnSequenceTimer(TimerHandle_t timer) {
     if (gpio_set_time_ms_ > 0 && scheduled_duration_ms_ > 0) {
         uint64_t elapsed_ms = step_start_time_ms - gpio_set_time_ms_;
         if (elapsed_ms < scheduled_duration_ms_) {
-            ESP_LOGW(TAG, "[SEQUENCE] Previous action still running: elapsed=%" PRIu64 " ms, scheduled=%lu ms (interrupted)", 
+            EAR_LOG_VERBOSE(TAG, "[SEQUENCE] Previous action still running: elapsed=%" PRIu64 " ms, scheduled=%lu ms (interrupted)", 
                      elapsed_ms, scheduled_duration_ms_);
         }
     }
@@ -915,7 +995,7 @@ void Tc118sEarController::OnSequenceTimer(TimerHandle_t timer) {
             sequence_active_ = false;
             emotion_action_active_ = false;
             
-            ESP_LOGI(TAG, "Sequence completed, resetting emotion state");
+            EAR_LOG_VERBOSE(TAG, "Sequence completed, resetting emotion state");
             
             // 停止定时器
             if (sequence_timer_) {
@@ -964,7 +1044,7 @@ bool Tc118sEarController::ShouldTriggerEmotion(const char* emotion) {
         is_emotion_active = emotion_action_active_;
     }
     
-    ESP_LOGI(TAG, "ShouldTriggerEmotion: checking %s, current_emotion=%s, emotion_action_active=%s, sequence_active=%s", 
+    EAR_LOG_VERBOSE(TAG, "ShouldTriggerEmotion: checking %s, current_emotion=%s, emotion_action_active=%s, sequence_active=%s", 
              emotion, current_emotion_.c_str(), is_emotion_active ? "true" : "false", is_sequence_active ? "true" : "false");
     
     // 如果当前有序列正在进行，不触发新的情绪
@@ -987,7 +1067,7 @@ bool Tc118sEarController::ShouldTriggerEmotion(const char* emotion) {
         return false;
     }
     
-    ESP_LOGI(TAG, "ShouldTriggerEmotion: %s is allowed to trigger", emotion);
+    EAR_LOG_VERBOSE(TAG, "ShouldTriggerEmotion: %s is allowed to trigger", emotion);
     return true;
 }
 
@@ -1000,7 +1080,7 @@ void Tc118sEarController::UpdateEmotionState(const char* emotion) {
     last_emotion_time_ = esp_timer_get_time() / 1000;
     emotion_action_active_ = true;
     
-    ESP_LOGI(TAG, "Updated emotion state: %s, time: %llu", emotion, (unsigned long long)last_emotion_time_);
+    EAR_LOG_VERBOSE(TAG, "Updated emotion state: %s, time: %llu", emotion, (unsigned long long)last_emotion_time_);
 }
 
 void Tc118sEarController::SetEarFinalPosition() {
@@ -1094,6 +1174,46 @@ void Tc118sEarController::TestEarPositions() {
     SetEarPosition(false, EAR_POSITION_UP);
     vTaskDelay(pdMS_TO_TICKS(800));
     
+    ESP_LOGI(TAG, "Setting both ears to DOWN position");
+    SetEarPosition(true, EAR_POSITION_DOWN);
+    SetEarPosition(false, EAR_POSITION_DOWN);
+    vTaskDelay(pdMS_TO_TICKS(800));
+
+    ESP_LOGI(TAG, "Setting both ears to UP position");
+    SetEarPosition(true, EAR_POSITION_UP);
+    SetEarPosition(false, EAR_POSITION_UP);
+    vTaskDelay(pdMS_TO_TICKS(800));
+    
+    ESP_LOGI(TAG, "Setting both ears to DOWN position");
+    SetEarPosition(true, EAR_POSITION_DOWN);
+    SetEarPosition(false, EAR_POSITION_DOWN);
+    vTaskDelay(pdMS_TO_TICKS(800));
+    /////////////////////////////////////////
+    ESP_LOGI(TAG, "Setting both ears to UP position");
+    SetEarPosition(true, EAR_POSITION_UP);
+    SetEarPosition(false, EAR_POSITION_UP);
+    vTaskDelay(pdMS_TO_TICKS(800));
+
+    ESP_LOGI(TAG, "Setting both ears to MIDDLE position");
+    SetEarPosition(true, EAR_POSITION_MIDDLE);
+    SetEarPosition(false, EAR_POSITION_MIDDLE);
+    vTaskDelay(pdMS_TO_TICKS(800));
+
+    ESP_LOGI(TAG, "Setting both ears to UP position");
+    SetEarPosition(true, EAR_POSITION_UP);
+    SetEarPosition(false, EAR_POSITION_UP);
+    vTaskDelay(pdMS_TO_TICKS(800));
+    
+    ESP_LOGI(TAG, "Setting both ears to MIDDLE position");
+    SetEarPosition(true, EAR_POSITION_MIDDLE);
+    SetEarPosition(false, EAR_POSITION_MIDDLE);
+    vTaskDelay(pdMS_TO_TICKS(800));
+    /////////////////////////////////////////
+    ESP_LOGI(TAG, "Setting both ears to DOWN position");
+    SetEarPosition(true, EAR_POSITION_DOWN);
+    SetEarPosition(false, EAR_POSITION_DOWN);
+    vTaskDelay(pdMS_TO_TICKS(800));
+
     ESP_LOGI(TAG, "Setting both ears to MIDDLE position");
     SetEarPosition(true, EAR_POSITION_MIDDLE);
     SetEarPosition(false, EAR_POSITION_MIDDLE);
@@ -1103,30 +1223,80 @@ void Tc118sEarController::TestEarPositions() {
     SetEarPosition(true, EAR_POSITION_DOWN);
     SetEarPosition(false, EAR_POSITION_DOWN);
     vTaskDelay(pdMS_TO_TICKS(800));
+
+    ESP_LOGI(TAG, "Setting both ears to MIDDLE position");
+    SetEarPosition(true, EAR_POSITION_MIDDLE);
+    SetEarPosition(false, EAR_POSITION_MIDDLE);
+    vTaskDelay(pdMS_TO_TICKS(800));
+
     
     ESP_LOGI(TAG, "=== Position Test Completed ===");
 }
 
 void Tc118sEarController::TestEarCombinations() {
-    ESP_LOGI(TAG, "=== Testing Ear Combinations (Simplified) ===");
+    ESP_LOGI(TAG, "=== Testing Ear Combinations ===");
+    ESP_LOGI(TAG, "Each combination will be tested twice for clear observation");
     
-    // 直接使用MoveBoth，避免复杂的组合逻辑
-    ESP_LOGI(TAG, "Both ears forward");
-    ear_combo_param_t combo = {EAR_COMBO_BOTH_FORWARD, EAR_MOVE_LONG_MS};
+    ear_combo_param_t combo;
+    
+    // 1. 双耳同时向前 (EAR_COMBO_BOTH_FORWARD)
+    ESP_LOGI(TAG, "--- Test 1: Both ears forward ---");
+    combo = {EAR_COMBO_BOTH_FORWARD, EAR_MOVE_FULL_MS};
+    MoveBoth(combo);
+    vTaskDelay(pdMS_TO_TICKS(1000));
+    combo = {EAR_COMBO_BOTH_FORWARD, EAR_MOVE_FULL_MS};
     MoveBoth(combo);
     vTaskDelay(pdMS_TO_TICKS(1000));
     
-    ESP_LOGI(TAG, "Both ears backward");
-    combo.combo_action = EAR_COMBO_BOTH_BACKWARD;
+    // 2. 双耳同时向后 (EAR_COMBO_BOTH_BACKWARD)
+    ESP_LOGI(TAG, "--- Test 2: Both ears backward ---");
+    combo = {EAR_COMBO_BOTH_BACKWARD, EAR_MOVE_FULL_MS};
+    MoveBoth(combo);
+    vTaskDelay(pdMS_TO_TICKS(1000));
+    combo = {EAR_COMBO_BOTH_BACKWARD, EAR_MOVE_FULL_MS};
     MoveBoth(combo);
     vTaskDelay(pdMS_TO_TICKS(1000));
     
-    ESP_LOGI(TAG, "Left forward, right backward");
-    combo.combo_action = EAR_COMBO_LEFT_FORWARD_RIGHT_BACKWARD;
+    // 3. 左耳向前，右耳保持 (EAR_COMBO_LEFT_FORWARD_RIGHT_HOLD)
+    ESP_LOGI(TAG, "--- Test 3: Left forward, right hold ---");
+    combo = {EAR_COMBO_LEFT_FORWARD_RIGHT_HOLD, EAR_MOVE_FULL_MS};
+    MoveBoth(combo);
+    vTaskDelay(pdMS_TO_TICKS(1000));
+    combo = {EAR_COMBO_LEFT_FORWARD_RIGHT_HOLD, EAR_MOVE_FULL_MS};
     MoveBoth(combo);
     vTaskDelay(pdMS_TO_TICKS(1000));
     
-    StopBoth();
+    // 4. 左耳保持，右耳向前 (EAR_COMBO_LEFT_HOLD_RIGHT_FORWARD)
+    ESP_LOGI(TAG, "--- Test 4: Left hold, right forward ---");
+    combo = {EAR_COMBO_LEFT_HOLD_RIGHT_FORWARD, EAR_MOVE_FULL_MS};
+    MoveBoth(combo);
+    vTaskDelay(pdMS_TO_TICKS(1000));
+    combo = {EAR_COMBO_LEFT_HOLD_RIGHT_FORWARD, EAR_MOVE_FULL_MS};
+    MoveBoth(combo);
+    vTaskDelay(pdMS_TO_TICKS(1000));
+    
+    // 5. 左耳向前，右耳向后 (EAR_COMBO_LEFT_FORWARD_RIGHT_BACKWARD)
+    ESP_LOGI(TAG, "--- Test 5: Left forward, right backward ---");
+    combo = {EAR_COMBO_LEFT_FORWARD_RIGHT_BACKWARD, EAR_MOVE_FULL_MS};
+    MoveBoth(combo);
+    vTaskDelay(pdMS_TO_TICKS(1000));
+    combo = {EAR_COMBO_LEFT_FORWARD_RIGHT_BACKWARD, EAR_MOVE_FULL_MS};
+    MoveBoth(combo);
+    vTaskDelay(pdMS_TO_TICKS(1000));
+    
+    // 6. 左耳向后，右耳向前 (EAR_COMBO_LEFT_BACKWARD_RIGHT_FORWARD)
+    ESP_LOGI(TAG, "--- Test 6: Left backward, right forward ---");
+    combo = {EAR_COMBO_LEFT_BACKWARD_RIGHT_FORWARD, EAR_MOVE_FULL_MS};
+    MoveBoth(combo);
+    vTaskDelay(pdMS_TO_TICKS(1000));
+    combo = {EAR_COMBO_LEFT_BACKWARD_RIGHT_FORWARD, EAR_MOVE_FULL_MS};
+    MoveBoth(combo);
+    vTaskDelay(pdMS_TO_TICKS(1000));
+    
+    // 7. 双耳停止 (EAR_COMBO_BOTH_STOP) - 最后测试停止功能
+    ESP_LOGI(TAG, "--- Test 6: Both ears stop ---");
+    combo = {EAR_COMBO_BOTH_STOP, 0};
+    MoveBoth(combo);
     vTaskDelay(pdMS_TO_TICKS(500));
     
     ESP_LOGI(TAG, "=== Combination Test Completed ===");
@@ -1134,83 +1304,74 @@ void Tc118sEarController::TestEarCombinations() {
 
 void Tc118sEarController::TestEarSequences() {
     ESP_LOGI(TAG, "=== Testing Emotion-Triggered Ear Sequences ===");
+    ESP_LOGI(TAG, "Each emotion will be triggered twice for clear observation");
     
     // 首先强制重置所有状态，确保测试环境干净
     ESP_LOGI(TAG, "Force resetting all states before testing...");
     ForceResetAllStates();
     vTaskDelay(pdMS_TO_TICKS(500));
     
-    // 测试各种情绪触发
+    // 测试各种情绪触发 - 包含所有主要情绪序列
     const char* test_emotions[] = {
-        "happy",      // 开心：双耳快速上下摆动
-        "excited",    // 兴奋：双耳快速连续摆动
-        "curious",    // 好奇：左右耳交替竖起
-        "playful",    // 顽皮：多步骤复杂摆动
-        "surprised",  // 惊讶：快速竖起后缓慢下垂
-        "sad",        // 悲伤：缓慢下垂后快速竖起
-        "sleepy"      // 困倦：完全下垂
+        "happy",      // 开心：摇摆2-3次，幅度大，最后停留在竖起位置
+        "excited",    // 超级兴奋：短时间前后摇摆5-6次，幅度小强度大
+        "curious",    // 好奇：使用交叉动作，左右耳相反方向运动
+        "playful",    // 顽皮：快速变化，加入交叉动作
+        "surprised",  // 惊讶：快速竖起，然后缓慢下垂
+        "sad",        // 悲伤：摇摆2-3次，前向幅度大，后向幅度小，最后停留在下摆位置
+        "sleepy",     // 困倦：缓慢下垂，最后停留在下摆位置
+        "confident",  // 自信：稳定节奏，最后停留在竖起位置
+        "confused",   // 困惑：使用正反交叉动作交替，表达混乱
+        "loving",     // 爱意：温柔节奏，幅度中等
+        "angry",      // 愤怒：快速节奏，小幅快速摆动
+        "cool"        // 酷：慢速节奏，幅度大，最后停留在竖起位置
     };
     
     const int emotion_count = sizeof(test_emotions) / sizeof(test_emotions[0]);
     
     for (int i = 0; i < emotion_count; i++) {
         const char* emotion = test_emotions[i];
-        ESP_LOGI(TAG, "Testing emotion: %s", emotion);
+        ESP_LOGI(TAG, "\n--- Testing emotion: %s (will trigger twice) ---", emotion);
         
-        // 触发情绪
+        // 第一次触发
+        ESP_LOGI(TAG, "  [1/2] Triggering emotion: %s", emotion);
         esp_err_t ret = TriggerEmotion(emotion);
         if (ret == ESP_OK) {
-            ESP_LOGI(TAG, "Emotion '%s' triggered successfully", emotion);
+            ESP_LOGI(TAG, "  [1/2] Emotion '%s' triggered successfully", emotion);
             
             // 等待情绪序列完成
             while (IsSequenceActive()) {
                 vTaskDelay(pdMS_TO_TICKS(100));
             }
             
-            // 情绪间间隔
-            vTaskDelay(pdMS_TO_TICKS(1000));
+            // 两次触发之间的间隔
+            vTaskDelay(pdMS_TO_TICKS(3000));
+            
+            // 第二次触发
+            ESP_LOGI(TAG, "  [2/2] Triggering emotion: %s again", emotion);
+            ret = TriggerEmotion(emotion);
+            if (ret == ESP_OK) {
+                ESP_LOGI(TAG, "  [2/2] Emotion '%s' triggered successfully", emotion);
+                
+                // 等待情绪序列完成
+                while (IsSequenceActive()) {
+                    vTaskDelay(pdMS_TO_TICKS(100));
+                }
+            } else {
+                ESP_LOGE(TAG, "  [2/2] Failed to trigger emotion '%s': %s", emotion, esp_err_to_name(ret));
+            }
         } else {
-            ESP_LOGE(TAG, "Failed to trigger emotion '%s': %s", emotion, esp_err_to_name(ret));
+            ESP_LOGE(TAG, "  [1/2] Failed to trigger emotion '%s': %s", emotion, esp_err_to_name(ret));
         }
-    }
-    
-    // 测试冷却机制
-    ESP_LOGI(TAG, "Testing emotion cooldown mechanism...");
-    ESP_LOGI(TAG, "Triggering 'happy' emotion twice quickly...");
-    
-    TriggerEmotion("happy");
-    vTaskDelay(pdMS_TO_TICKS(100));  // 短暂等待
-    TriggerEmotion("happy");  // 应该被冷却机制阻止
-    
-    // 等待当前序列完成
-    while (IsSequenceActive()) {
-        vTaskDelay(pdMS_TO_TICKS(100));
-    }
-    
-    // 测试停止情绪
-    ESP_LOGI(TAG, "Testing emotion stop mechanism...");
-    TriggerEmotion("playful");
-    vTaskDelay(pdMS_TO_TICKS(500));  // 让序列开始
-    StopEmotion();  // 停止当前情绪
-    
-    // 测试状态重置
-    ESP_LOGI(TAG, "Testing state reset mechanism...");
-    ForceResetAllStates();
-    vTaskDelay(pdMS_TO_TICKS(500));
-    
-    // 测试重置后是否能正常触发
-    ESP_LOGI(TAG, "Testing emotion trigger after state reset...");
-    TriggerEmotion("happy");
-    
-    // 等待序列完成
-    while (IsSequenceActive()) {
-        vTaskDelay(pdMS_TO_TICKS(100));
+        
+        // 情绪之间的间隔（让测试更清晰）
+        ESP_LOGI(TAG, "  Emotion '%s' test completed, waiting before next emotion...", emotion);
+        vTaskDelay(pdMS_TO_TICKS(1500));
     }
     
     // 重置到默认位置
-    ESP_LOGI(TAG, "Resetting ears to default position...");
-    SetEarPosition(true, EAR_POSITION_DOWN);
-    SetEarPosition(false, EAR_POSITION_DOWN);
+    ESP_LOGI(TAG, "\nResetting ears to default position...");
+    ForceResetAllStates();
     vTaskDelay(pdMS_TO_TICKS(500));
     
     ESP_LOGI(TAG, "=== Emotion-Triggered Sequence Test Completed ===");
